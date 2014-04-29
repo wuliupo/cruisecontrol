@@ -47,3 +47,24 @@
 </cruisecontrol:artifactsLink>
 
 <cruisecontrol:xsl xslFile="/xsl/buildresults.xsl"/>
+
+<script type="text/javascript">
+window.onload=function(){
+	var trs = document.getElementsByTagName('tr'), tds, lastChange, lastDoNotMerge=0, header, cnt=0;
+	for(var i=trs.length-1; i>=0; i--){
+		if(trs[i].className == 'modifications-evenrow' || trs[i].className == 'modifications-oddrow') {
+			tds = trs[i].getElementsByTagName('td');
+			if(tds[1].innerHTML == 'sm-automerge' && tds[5] && tds[5].innerHTML.indexOf('DoNotMerge') > 0) {
+				trs[i].style.display = 'none';
+				lastDoNotMerge=i;
+				cnt++;
+			}
+			lastChange=tds[3].innerHTML;
+		} else if(trs[i].innerHTML.indexOf('modifications-sectionheader') > 0){
+			header=trs[i].getElementsByTagName('td')[0];
+		}
+	}
+	//trs[lastDoNotMerge].style.display = '';
+	header.innerHTML = header.innerHTML + '&nbsp; &nbsp; (' + cnt + ' DoNotMerge changes removed)' + '&nbsp; &nbsp; This build is based on SVN revision ' + lastChange;
+};
+</script>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Build trend</title>
+<link rel="stylesheet" type="text/css" href="./jquery.jqplot.css" />
+<style>
+.action {float:right; margin-right: 20px; z-index:1000px;}
+.chart {clear:both;}
+.jqplot-cursor2-tooltip {z-index: 2000; font-size:14px; font-weight:bold; background-color:#FFF; padding: 5px 10px; border-radius: 10px; border: 1px solid #888}
+h1{min-height: 20px;padding: 19px;margin-bottom: 20px;background-color: #f5f5f5;border: 1px solid #e3e3e3;border-radius: 4px;-webkit-box-shadow: inset 0 1px 1px rgba(0, 0, 0, .05);box-shadow: inset 0 1px 1px rgba(0, 0, 0, .05);}
+table {min-width: 100%; border-collapse: collapse;border-spacing: 0;}
+tr > td, tr > th {padding: 8px; line-height: 1.428571429;vertical-align: top;border: 1px solid #dddddd; min-width: 70px;}
+tr:nth-child(even) > td{background-color: #f9f9f9;}
+.red{color:red}
+.green{color:green}
+.hide{display:none}
+a, a:hover, a:active, a:link{color:#333;}
+</style>
+</head>
+<h1 class="well">CruiseControl Results Loadig...</h1>
+<h3></h3>
+<table id="data">
+	<tr><th class="hide">Title</th><th>Start date</th><th>Cost time</th><th>Description</th><th>Maven modules</th><th>Link</th></tr>
+</table>
+<div id="canvas" class="chart" style="height:500px;width:90%; margin:30px auto;"></div>
+<body>
+
+<script type="text/javascript" src="./jquery.min.js"></script>
+<script type="text/javascript" src="./jquery.jqplot.js"></script>
+<script type="text/javascript" src="./jqplot.dateAxisRenderer.js"></script>
+<script type="text/javascript" src="./jqplot.logAxisRenderer.js"></script>
+<script type="text/javascript" src="./jqplot.canvasTextRenderer.js"></script>
+<script type="text/javascript" src="./jqplot.canvasAxisLabelRenderer.js"></script>
+<script type="text/javascript" src="./jqplot.canvasAxisTickRenderer.js"></script>
+<script type="text/javascript" src="./jqplot.categoryAxisRenderer.js"></script>
+<script type="text/javascript" src="./jqplot.barRenderer.js"></script>
+<script type="text/javascript" src="./jqplot.pointLabels.js"></script>
+<script type="text/javascript">
+$(document).ready(function() {
+	var name=location.href;
+	var times=[];
+	var colors=[];
+	var len=0;
+	name=name.substring(name.indexOf('?') + 1);
+	$.jqplot.config.enablePlugins = true;
+	if(!name) {
+		$("#data").html(' Cannot load build project data');
+		return;
+	}
+	$.get('../rss/' + name, function(data){
+		if(!data) {
+			$("#data").html(' Cannot load build project data');
+			return;
+		}
+		var title=$(data).find("title").first().text();
+		var links=$(data).find("link").first().text();
+		var description=$(data).find("description").first().text();
+		$("h1").html(title);
+		$("h3").html(description + ' <a href="'+links+'">' + links + '</a>');
+		var id=1;
+		len=$(data).find("item").each(function(index, ele) {
+			var title = $(ele).find("title").text();
+			var links = $(ele).find("link").text();
+			var description = $(ele).find("description").text();
+			description=description.replace('Build ', '').replace('!', '');
+			var status = description=='FAILED' ? 'red' : 'green';
+			var pubDate = $(ele).find("pubDate").text();
+			pubDate=format(pubDate);
+			var file = links.substring(links.indexOf('buildresults') + 13).replace('?log=', '/');
+			$("#data").append('<tr><td class="hide">'+title+'</td><td>'+pubDate+'</td><td id="costtime'+id+'">loading...</td><td class="'+status+'">'+description+'</td><td><a href="./?log=logs/' + file +'">Details</a></td><td><a href="'+links+'">' + links + '</a></td></tr>');
+			loadCostTime(id, file, links, description, pubDate);
+			id++;
+		}).length;
+	}, 'xml');
+	
+	function format(str){
+		var d=new Date(str);
+		return d.toLocaleString();
+	}
+	function loadCostTime(id, file, links, description, startdate){
+		$.get('time.jsp?log=logs/' + file, function(data){
+			var costtime=$.trim(data);
+			$('#costtime'+id).html(costtime);
+			
+			var arr = costtime.split(' ').reverse();
+			arr.push(0, 0);
+			costtime = Math.round(arr[1]/6 + arr[3]*10)/10;
+			
+			//{id:id, status:status, links:links, startdate:startdate, costtime: costtime}
+			times.push([startdate, costtime]);
+			colors.push(description=='FAILED' ? '#C33' : '#6B6');
+
+			len--;
+			if(len==0){
+				console.log(JSON.stringify(times));
+				console.log(JSON.stringify(colors));
+				showChart(times.reverse(), colors.reverse());
+			}
+		});
+	}
+	
+	function showChart(times, colors){
+ 		$('#canvas').jqplot([times], {
+			animate: !$.jqplot.use_excanvas,
+			title:'Build time trend',
+			seriesColors: colors,
+			seriesDefaults:{
+				renderer: $.jqplot.BarRenderer,
+				lineWidth: 1,
+				pointLabels: { show: true, location: 'e', edgeTolerance: -10 },
+				shadowAngle: 135,
+				showMarker: true,
+				rendererOptions: {
+					varyBarColor: true,
+					barWidth: 10,
+					animation: {
+						show: true
+					}
+				}
+			},
+			axes: {
+				xaxis:{
+					label: 'Start time',
+					renderer: $.jqplot.DateAxisRenderer,
+					rendererOptions:{
+						tickRenderer:$.jqplot.CanvasAxisTickRenderer
+					},
+					tickOptions:{ 
+						fontSize:'11px',
+						fontFamily:'Arial'
+					}
+				},
+				yaxis: {
+					renderer: $.jqplot.LinearAxisRenderer,
+					pad: 1,
+					label: 'Cost Time',
+					tickOptions:{
+						suffix: 'min',
+						mark: 'inside'
+					}
+				}
+			},
+			grid: {
+				drawBorder: true,
+				shadow: true,
+				background: "#FEFEFE"
+			}
+		});
+	}
+});
+</script>
+</body>
+</html>

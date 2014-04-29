@@ -364,6 +364,7 @@
   <title><%= name%> CruiseControl at <%= hostname %></title>
 
   <base href="<%=baseURL%>"/>
+  <base target="_blank"/>
   <link type="application/rss+xml" rel="alternate" href="rss" title="RSS"/>
   <link type="text/css" rel="stylesheet" href="css/cruisecontrol.css"/>
   <META HTTP-EQUIV="Refresh" CONTENT="10" URL="<%=thisURL%>?sort=<%=sort%>">
@@ -466,7 +467,7 @@
     <table border="0" cellpadding="0" cellspacing="0" width="100%">
         <tr>
             <td valign="top">
-                <div class="logo"><a href="http://cruisecontrol.sourceforge.net/"><img alt="CruiseControl" src="images/banner.png"/></a></div>
+                <div class="logo"><a href="./"><img alt="CruiseControl" src="images/banner.png"/></a></div>
             </td>
             <td style="text-align:right;vertical-align:bottom">
                 <div class="modifications-data" align=right align=top font=10><%=ccVersionString%></div>
@@ -520,6 +521,7 @@
             <td><a class="<%= "last failure".equals(sort) ? "sort" : "sorted" %>" href="<%=thisURL%>?sort=last failure">Last failure</a></td>
             <td><a class="<%= "last successful".equals(sort) ? "sort" : "sorted" %>" href="<%=thisURL%>?sort=last successful">Last successful</a></td>
             <td>Label</td>
+            <td>Trend</td>
             <% if (jmxEnabled) { %>
             <td></td>
             <% } //end if jmxEnabled %>
@@ -551,6 +553,7 @@
               <td class="data date failure"><%= (info[i].failed()) ? info[i].getLastBuildTime() : "" %></td>
               <td class="data date"><%= info[i].getLastSuccessfulBuildTime() %></td>
               <td class="data"><%= info[i].getLabel()%></td>
+              <td class="data"><a href="report/trend.htm?<%=info[i].project%>">Trend</a></td>
 
               <% if (jmxEnabled) { %>
               <td class="data"><input id="<%= "force_" + info[i].project %>" type="button"

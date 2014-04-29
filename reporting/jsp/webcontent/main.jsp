@@ -51,6 +51,16 @@
     } else {
         ccVersionString = "";
     }
+
+	String logDir = pageContext.getServletContext().getInitParameter("logDir") + "/" + project;
+	String logName = request.getParameter("log");
+	if (logName == null || "".equals(logName.trim())) {
+		logName = net.sourceforge.cruisecontrol.LogFile.getLatestLogFile(new File(logDir)).getName();
+	}
+	String report_url = "report/?log=" + logDir + "/" + logName;
+	String trend_url = "report/trend.htm?" + project;
+	String logs_url = "logs/" + project + "/" + logName;
+
 %>
 <html>
 <head>
@@ -86,9 +96,10 @@
                 <%@ include file="testdetails.jsp" %>
               </cruisecontrol:tab>
 
-              <cruisecontrol:loglink id="logs_url"/>
               <cruisecontrol:tab name="log" url="<%=logs_url%>" label="XML Log File" />
-
+              <cruisecontrol:tab name="log" url="<%=report_url%>" label="Report" />
+              <cruisecontrol:tab name="log" url="<%=trend_url%>" label="Trend" />
+			  
               <cruisecontrol:tab name="metrics" label="Metrics" >
                 <%@ include file="metrics.jsp" %>
               </cruisecontrol:tab>

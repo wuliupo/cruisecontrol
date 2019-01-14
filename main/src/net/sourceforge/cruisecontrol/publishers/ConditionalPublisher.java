@@ -39,7 +39,7 @@ package net.sourceforge.cruisecontrol.publishers;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.jdom.Element;
+import org.jdom2.Element;
 
 import net.sourceforge.cruisecontrol.CruiseControlException;
 import net.sourceforge.cruisecontrol.Publisher;
@@ -47,7 +47,7 @@ import net.sourceforge.cruisecontrol.util.ValidationHelper;
 
 /**
  * An abstract base class for any publisher which wishes to conditionally
- * execute a set of contained <coe>Publisher</code>s.
+ * execute a set of contained <code>Publisher</code>s.
  */
 public abstract class ConditionalPublisher implements Publisher {
 

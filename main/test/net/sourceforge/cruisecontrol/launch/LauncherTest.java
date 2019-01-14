@@ -1,11 +1,15 @@
 package net.sourceforge.cruisecontrol.launch;
 
 import java.io.File;
-import java.util.Properties;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 import junit.framework.TestCase;
-import net.sourceforge.cruisecontrol.launch.util.Locator;
-import net.sourceforge.cruisecontrol.MainTest;
+import net.sourceforge.cruisecontrol.CruiseControlOptions;
+import net.sourceforge.cruisecontrol.testutil.TestUtil.FilesToDelete;
+import net.sourceforge.cruisecontrol.testutil.TestUtil.PropertiesRestorer;
 
 /**
  * @author Dan Rollo
@@ -14,94 +18,198 @@ public class LauncherTest extends TestCase {
 
     private static final String[] EMPTY_STRING_ARRAY = new String[]{};
 
-    private Properties origSysProps;
+    private final FilesToDelete files2delete = new FilesToDelete();
+    private final PropertiesRestorer origSysProps = new PropertiesRestorer();
+    private final LogInterface log = new StdErrLogger();
     private ClassLoader origClassLoader;
 
+    @Override
     protected void setUp() throws Exception {
-        // shallow copy should be enough, but maybe deep copy would be better?
-        origSysProps = (Properties) System.getProperties().clone();
-
+        origSysProps.record();
         origClassLoader = Thread.currentThread().getContextClassLoader();
     }
 
+    @Override
     protected void tearDown() throws Exception {
-        // restore classloader
+        // restore classloader and properties
         Thread.currentThread().setContextClassLoader(origClassLoader);
-
-        // restore sys props
-        System.setProperties(origSysProps);
+        origSysProps.restore();
+        files2delete.delete();
     }
 
-    public void testGetCCHomeDir() throws Exception {
+    public void testGetCCProjDir() throws Exception {
+        final Launcher launcher = new LauncherMock();
+        final File validProjDir = new File(".");
 
-        final Launcher launcher = new Launcher();
-        final File sourceJar = Locator.getClassSource(launcher.getClass());
-        final File distJarDir = sourceJar.getParentFile();
-
-        final File validHomeDir = distJarDir.getParentFile();
-
-        assertEquals("Wrong default CCHomeDir", validHomeDir, launcher.getCCHomeDir(distJarDir));
-
-        // Need to reset SysProp after successful call to getCCHomeDir() because
-        // getCCHomeDir() resets the SysProp when a valid default is found.
-        System.setProperty(Launcher.CCHOME_PROPERTY, "bogusHomeSysProp");
-        // this should work since invalid sys prop is overridden if default is valid.
-        assertEquals("Wrong default CCHomeDir w/ bad sysprop", validHomeDir, launcher.getCCHomeDir(distJarDir));
-
-        System.setProperty(Launcher.CCHOME_PROPERTY, "bogusHomeSysProp");
+        // proj is not set explicitly
         try {
-            launcher.getCCHomeDir(new File("bogus"));
-            fail("Wrong default CCHomeDir w/ bad sysprop AND bad distDir should have failed.");
+            final LaunchOptions conf = new LaunchOptions(new String[0], log, launcher);
+            assertEquals(validProjDir.getCanonicalPath(), launcher.getCCProjDir(conf, log).getCanonicalPath());
+            assertEquals(validProjDir.getCanonicalPath(), conf.getOptionDir(conf.KEY_PROJ_DIR).getCanonicalPath());
+        } finally {
+            origSysProps.restore();
+        }
+
+        // proj is set explicitly and valid
+        try {
+            final LaunchOptions conf = new LaunchOptions(new String[] {"-proj", "./"}, log, launcher);
+            assertEquals(validProjDir.getCanonicalPath(), launcher.getCCProjDir(conf, log).getCanonicalPath());
+            assertEquals(validProjDir.getCanonicalPath(), conf.getOptionDir(conf.KEY_PROJ_DIR).getCanonicalPath());
+        } finally {
+            origSysProps.restore();
+        }
+
+        // proj is set explicitly but invalid
+        try {
+            final LaunchOptions conf = new LaunchOptions(new String[] {"-proj", "wrong/path"}, log, launcher);
+            launcher.getCCProjDir(conf, log);
+            fail("Wrong explicit CCProjDir should have failed.");
         } catch (LaunchException e) {
-            assertEquals(Launcher.MSG_BAD_CCHOME, e.getMessage());
+            assertEquals(Launcher.MSG_BAD_CCPROJ, e.getMessage());
         }
     }
 
-    public void testLauncherNullCCHomeProperty() throws Exception {
-        final String[] args = new String[] { "-configfile", "bogusConfigFile" };
-        final Launcher launcher = new Launcher();
-        System.getProperties().remove(Launcher.CCHOME_PROPERTY);
-        // prevent system.exit calls from printUsage
-        System.setProperty(Launcher.SYSPROP_CCMAIN_SKIP_USAGE_EXIT, "true");
+    public void testGetCCDistDir() throws Exception {
+        final Launcher launcher = new LauncherMock();
+        final File sourceJar = launcher.getClassSource();
+        final File sourceJarDir = sourceJar.getParentFile();
+        final File validDistDir = sourceJarDir.getParentFile();
 
-        // line below fails w/ NPE if sysprop "cc.home" doesn't exist
-        launcher.run(args);
+        // Dist is not set explicitly
+        final LaunchOptions conf1 = new LaunchOptions(new String[0], log, launcher);
+        assertEquals(validDistDir.getCanonicalPath(), launcher.getCCDistDir(conf1, log).getCanonicalPath());
+        assertEquals(validDistDir.getCanonicalPath(), conf1.getOptionDir(conf1.KEY_DIST_DIR).getCanonicalPath());
+
+        // Dist is set explicitly and valid
+        final LaunchOptions conf2 = new LaunchOptions(new String[] {"-dist", validDistDir.getPath()}, log, launcher);
+        assertEquals(validDistDir.getCanonicalPath(), launcher.getCCDistDir(conf2, log).getCanonicalPath());
+        assertEquals(validDistDir.getCanonicalPath(), conf2.getOptionDir(conf2.KEY_DIST_DIR).getCanonicalPath());
+
+        // Dist is set explicitly but invalid
+        final LaunchOptions conf3 = new LaunchOptions(new String[] {"-dist", "wrong/path"}, log, launcher);
+        try {
+            launcher.getCCDistDir(conf3, log);
+            fail("Wrong explicit CCDistDir should have failed.");
+        } catch (LaunchException e) {
+            assertEquals(Launcher.MSG_BAD_CCDIST, e.getMessage());
+        }
     }
 
     public void testArgLog4jconfig() throws Exception {
         assertNull(System.getProperty(Launcher.PROP_LOG4J_CONFIGURATION));
 
-        final Launcher launcher = new Launcher();
-
+        final LauncherMock launcher = new LauncherMock();
         // prevent printUsage msg from printing
-        MainTest.setSkipUsage();
-        // prevent system.exit calls from printUsage
-        System.setProperty(Launcher.SYSPROP_CCMAIN_SKIP_USAGE_EXIT, "true");
+//        MainTest.setSkipUsage();
+//        // prevent system.exit calls from printUsage
+//        System.setProperty(Launcher.SYSPROP_CCMAIN_SKIP_USAGE_EXIT, "true");
 
-        launcher.run(EMPTY_STRING_ARRAY);
-        assertNull("log4j sys prop should not be set.", System.getProperty(Launcher.PROP_LOG4J_CONFIGURATION));
-
+        // Correct log4j config (at least file exists)
         try {
-            launcher.run(new String[]{ "-" + Launcher.ARG_LOG4J_CONFIG });
-            fail("missing log4j config filename should have failed.");
-        } catch (LaunchException e) {
-            assertEquals(Launcher.ERR_MSG_LOG4J_CONFIG, e.getMessage());
-        }
-        assertNull("log4j sys prop should not be set.", System.getProperty(Launcher.PROP_LOG4J_CONFIGURATION));
+            final FilesToDelete f = new FilesToDelete();
+            final File log4jConfig = f.add("log4j.user.config");
 
-        final String bogusLog4jConfig = "bogusLog4jConfig";
-        final String[] args = new String[] { "-" + Launcher.ARG_LOG4J_CONFIG, bogusLog4jConfig };
-
-        try {
-            launcher.run(args);
-            assertEquals(bogusLog4jConfig, System.getProperty(Launcher.PROP_LOG4J_CONFIGURATION));
-
-            // ensure we override existing sys prop
-            System.setProperty(Launcher.PROP_LOG4J_CONFIGURATION, "dummy");
-            launcher.run(args);
-            assertEquals(bogusLog4jConfig, System.getProperty(Launcher.PROP_LOG4J_CONFIGURATION));
+            launcher.run(new String[]{ "-" + LaunchOptions.KEY_LOG4J_CONFIG, "file://" + log4jConfig.getAbsolutePath()});
+            assertNotNull("log4j sys prop should be set", System.getProperty(Launcher.PROP_LOG4J_CONFIGURATION));
+        } catch (Exception e) {
+            // Here the default file was not found ...
+            fail("log4j sys prop error: " + e.getMessage());
         } finally {
-            System.getProperties().remove(Launcher.PROP_LOG4J_CONFIGURATION);
+            launcher.clearConfig();
+            origSysProps.restore();
         }
+
+        // When not set, no property is set
+        try {
+            launcher.run(EMPTY_STRING_ARRAY);
+            assertNull("log4j sys prop should not be set", System.getProperty(Launcher.PROP_LOG4J_CONFIGURATION));
+        } catch (Exception e) {
+            // Here the default file was not found ...
+            fail("log4j sys prop error: " + e.getMessage());
+        } finally {
+            launcher.clearConfig();
+            origSysProps.restore();
+        }
+
+        // Set the non-URL path - through config
+        try {
+            final String bogusLog4jConfig = "bogusLog4jConfig";
+            final String[] args = new String[] { "-" + LaunchOptions.KEY_LOG4J_CONFIG, bogusLog4jConfig };
+
+            launcher.run(args);
+            fail("Exception was expected, since " + bogusLog4jConfig + " should not exist");
+
+        } catch (IllegalArgumentException e) {
+            assertEquals("Option 'log4jconfig' = 'bogusLog4jConfig' does not represent URL value!",
+                         e.getMessage());
+        } finally {
+            launcher.clearConfig();
+            origSysProps.restore();
+        }
+    }
+
+    /**
+     * Tests passing the config options to the CC main process
+     */
+    public void testPassConfigToMain() throws Exception {
+        final File launchConf = files2delete.add("launch", ".conf");
+
+        final List<Map.Entry<String,String>> opts = new ArrayList<Map.Entry<String,String>>();
+        opts.add(new AbstractMap.SimpleEntry<String, String>("dist", "."));
+        opts.add(new AbstractMap.SimpleEntry<String, String>("proj", "ccHome"));
+        opts.add(new AbstractMap.SimpleEntry<String, String>("user_lib", "lib"));
+        opts.add(new AbstractMap.SimpleEntry<String, String>("user_lib", "main/lib"));
+        // Make XML cruisecontrol config (containing the <launch> section)
+        LaunchOptionsTest.storeXML(LaunchOptionsTest.makeConfigXML(LaunchOptionsTest.makeLauchXML(opts)), launchConf);
+
+
+        final CruiseControlOptions conf;
+        final LauncherMock launcher = new LauncherMock();
+
+        try {
+            launcher.run(new String[] {"-" + LaunchOptions.KEY_CONFIG_FILE, launchConf.getAbsolutePath(),
+                                       "-" + CruiseControlOptions.KEY_USER, "DummyUser",  //Some CC-specific options
+                                       "-" + CruiseControlOptions.KEY_CC_NAME,  "CC_Tester"});
+            // Launch must be OK
+            assertEquals(false, launcher.exitedWithErrorCode());
+
+            // Check he configuration
+            conf = CruiseControlOptions.getInstance();
+            // And check the arguments
+            assertEquals((new File("./ccHome")).getCanonicalPath(), conf.getOptionDir(LaunchOptions.KEY_PROJ_DIR).getCanonicalPath());
+            assertEquals((new File(".")).getCanonicalPath(), conf.getOptionDir(LaunchOptions.KEY_DIST_DIR).getCanonicalPath());
+
+            assertEquals("DummyUser", conf.getOptionStr(CruiseControlOptions.KEY_USER));
+            assertEquals("CC_Tester", conf.getOptionStr(CruiseControlOptions.KEY_CC_NAME));
+
+        } finally {
+            launcher.clearConfig();
+        }
+    }
+
+    /** Mock object for {@link Launcher} which disables the System.exit() call on failure */
+    private static class LauncherMock extends Launcher {
+        /** Releases the {@link CruiseControlOptions} config it it has been instantiated in {@link #main(String[])}
+         *  <b>do not forget to call the method when {@link #run(String[])} or {@link #main(String[])} was called in a test!</b> */
+        void clearConfig() {
+            CruiseControlOptions.delInstance(this);
+        }
+        /** Override of {@link Launcher#newConfOwner()} - it returns this instance */
+        @Override
+        protected Object newConfOwner() {
+            return this;
+        }
+        /** @return gets <code>true</code> when {@link #exitWithErrorCode()} was called.  */
+        boolean exitedWithErrorCode() {
+            return error;
+        }
+        /** Does nothing to prevent tests cancellation */
+        @Override
+        protected void exitWithErrorCode() {
+            error = true;
+        }
+
+        // Exit code
+        private boolean error = false;
     }
 }

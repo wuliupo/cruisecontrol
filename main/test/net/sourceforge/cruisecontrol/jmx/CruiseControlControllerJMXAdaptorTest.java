@@ -17,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import junit.framework.TestCase;
 import net.sourceforge.cruisecontrol.CruiseControlController;
 import net.sourceforge.cruisecontrol.CruiseControlException;
+import net.sourceforge.cruisecontrol.CruiseControlOptions;
 import net.sourceforge.cruisecontrol.ProjectConfig;
 import net.sourceforge.cruisecontrol.ProjectInterface;
 import net.sourceforge.cruisecontrol.testutil.TestUtil;
@@ -30,12 +31,16 @@ public class CruiseControlControllerJMXAdaptorTest extends TestCase {
 
     private CruiseControlControllerJMXAdaptor adaptor;
 
+    @Override
     protected void setUp() throws Exception {
         super.setUp();
+        CruiseControlOptions.getInstance(this);
         adaptor = new CruiseControlControllerJMXAdaptor(new CruiseControlController());
     }
 
+    @Override
     protected void tearDown() throws Exception {
+        CruiseControlOptions.delInstance(this);
         filesToDelete.delete();
     }
 

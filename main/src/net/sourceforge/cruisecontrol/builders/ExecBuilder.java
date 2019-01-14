@@ -49,8 +49,8 @@ import net.sourceforge.cruisecontrol.util.Util;
 import net.sourceforge.cruisecontrol.util.ValidationHelper;
 
 import org.apache.log4j.Logger;
-import org.jdom.CDATA;
-import org.jdom.Element;
+import org.jdom2.CDATA;
+import org.jdom2.Element;
 
 
 /**
@@ -73,8 +73,6 @@ public class ExecBuilder extends Builder {
     private String workingDir;
     private String errorStr;
     private long timeout = ScriptRunner.NO_TIMEOUT;
-    private Element buildLogElement; // global log to produce
-
 
     /*
      * validate the attributes for the plugin
@@ -114,18 +112,18 @@ public class ExecBuilder extends Builder {
      *        of the script.
      * @return the result of the command.
      */
-    Element build(final Map<String, String> buildProperties, final Progress progressIn,
+    public Element build(final Map<String, String> buildProperties, final Progress progressIn,
             final InputStream stdinProvider) {
 
         final Progress progress = getShowProgress() ? progressIn : null;
         final OSEnvironment buildEnv = new OSEnvironment();
         // time the command started
         final long startTime = System.currentTimeMillis();
+        final Element buildLogElement = new Element("build");
+
 
         // Merge the environment with the configuration
         mergeEnv(buildEnv);
-
-        buildLogElement = new Element("build");
 
         // setup script handler
         final ExecScript script = createExecScript();
@@ -219,11 +217,11 @@ public class ExecBuilder extends Builder {
         return value;
     }
 
-    ExecScript createExecScript() {
+    protected ExecScript createExecScript() {
         return new ExecScript();
     }
 
-    ScriptRunner createScriptRunner() {
+    protected ScriptRunner createScriptRunner() {
         return new ScriptRunner();
     }
 
@@ -295,6 +293,12 @@ public class ExecBuilder extends Builder {
     public void setErrorStr(String errStr) {
         this.errorStr = errStr;
     } // setErrorStr
+    /**
+     * @return value set by {@link #setErrorStr(String)} or <code>null</code> if nothing set.
+     */
+    public String getErrorStr() {
+        return this.errorStr;
+    } // getErrorStr
 
     /**
      * Sets the working directory where the command is to be executed
@@ -303,7 +307,6 @@ public class ExecBuilder extends Builder {
     public void setWorkingDir(String dir) {
         this.workingDir = dir;
     } // setWorkingDir
-
     /**
      * Gets the working directory set by {@link #setWorkingDir(String)}, or
      * <code>null</code> if not set yet.
@@ -311,19 +314,6 @@ public class ExecBuilder extends Builder {
      */
     public String getWorkingDir() {
         return this.workingDir;
-    } // getworkingDir
-
-
-    /**
-     * Get whether there was n error written to the build log
-     * @return the error string otherwise null
-     */
-    public String getBuildError() {
-        if (this.buildLogElement.getAttribute("error") != null) {
-            return this.buildLogElement.getAttribute("error").getValue();
-        } else {
-            return "none";
-        }
-    } // getBuildError
+    } // getWorkingDir
 
 } // ExecBuilder

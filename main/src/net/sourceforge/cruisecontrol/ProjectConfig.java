@@ -42,11 +42,14 @@ import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 import javax.management.JMException;
 import javax.management.MBeanServer;
 
+import net.sourceforge.cruisecontrol.SourceControl.VetoException;
 import net.sourceforge.cruisecontrol.config.DefaultPropertiesPlugin;
 import net.sourceforge.cruisecontrol.config.PluginPlugin;
 import net.sourceforge.cruisecontrol.config.PropertiesPlugin;
@@ -523,5 +526,39 @@ public class ProjectConfig implements ProjectInterface {
 
     public String[] getLogLabelLines(final String logLabel, final int firstLine) {
         return log.getLogLabelLines(logLabel, firstLine);
+    }
+
+    public Map<String, String> getProperties() {
+        return project.getProperties();
+    }
+
+    public List<Modification> modificationsSinceLastBuild() {
+        // I think it is OK to throw VetoException here, since the exception is expected to cancel a
+        // build. Since the project we want the status for is not configured properly, it is more safe
+        // to cancel its build with clean reason that to pretend that there are no modifications.
+        if (project == null) {
+            throw new VetoException(name + " not configured?!");
+        }
+        return project.modificationsSinceLastBuild();
+    }
+
+    public List<Modification> modificationsSince(Date since) {
+        return project.modificationsSince(since);
+    }
+
+    public Date successLastBuild() {
+        return project.successLastBuild();
+    }
+
+    public String getLogDir() {
+        return log.getLogDir();
+    }
+
+    public String successLastLabel() {
+        return project.successLastLabel();
+    }
+
+    public String successLastLog() {
+        return project.successLastLog();
     }
 }

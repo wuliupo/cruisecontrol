@@ -76,7 +76,7 @@ import net.sourceforge.cruisecontrol.util.Util;
 import net.sourceforge.cruisecontrol.util.threadpool.ThreadQueue;
 
 import org.apache.log4j.Logger;
-import org.jdom.Element;
+import org.jdom2.Element;
 
 /**
  *
@@ -378,6 +378,9 @@ public class CruiseControlControllerJMXAdaptor extends NotificationBroadcasterSu
     public String getPluginCSS() {
         // Read the CSS from the file that is bundled with the JAR, in the gendoc.html
         // package. Return an empty string if there is any kind of error.
+        // TODO: should load cruisecontrol.css and configxml-gendoc.css separately and concat
+        //       them together here, instead of depending on a build target to generate gendoc.css
+        //       for us.
         final InputStream stream = ConfigHtmlGenerator.class.getResourceAsStream("gendoc.css");
         try {
             return IO.readText(stream);

@@ -46,6 +46,7 @@ import static org.junit.Assert.fail;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.StringReader;
@@ -60,22 +61,35 @@ import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
 
-import net.sourceforge.cruisecontrol.CruiseControlException;
-import net.sourceforge.cruisecontrol.Modification;
-
-import org.jdom.JDOMException;
+import org.jdom2.JDOMException;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import net.sourceforge.cruisecontrol.CruiseControlException;
+import net.sourceforge.cruisecontrol.Modification;
+import net.sourceforge.cruisecontrol.testutil.TestUtil;
+
 // TODO: Split this up into separate tests
 public class SVNTest {
+    private static final File buildTargetDirectory = TestUtil.getTargetDir();
+    private static final FilenameFilter dotSVNFilter = new FilenameFilter() {
+        public boolean accept(final File currentDirectory, final String name) {
+            if (".svn".equals(name)) {
+                return true;
+            }
+
+            return false;
+        }
+    };
+
     private SVN svn;
     private TimeZone originalTimeZone;
 
     @Before
     public void setUp() {
         svn = new SVN();
+        svn.setLocalWorkingCopy("./");//findLocalWorkingCopy());
         originalTimeZone = TimeZone.getDefault();
     }
 
@@ -86,6 +100,7 @@ public class SVNTest {
 
     @Test(expected = CruiseControlException.class)
     public void failsValidationWhenNoAttributesAreSet() throws CruiseControlException {
+        final SVN svn = new SVN();
         svn.validate();
     }
 
@@ -462,7 +477,7 @@ public class SVNTest {
                 + "<commit revision=\"12345\">\n" + "<author>joebloggs</author>\n"
                 + "<date>2007-07-11T08:31:58.089161Z</date>\n" + "</commit>\n" + "</entry>\n" + "</info>";
         String currentRevision = SVN.SVNInfoXMLParser.parse(new StringReader(svnInfo));
-        
+
         assertThat(currentRevision, equalTo("12345"));
     }
 
@@ -476,5 +491,21 @@ public class SVNTest {
         expectedCmd = new String[] { "svn", "info", "--xml", "foo" };
         actualCmd = svn.buildInfoCommand("foo").getCommandline();
         assertThat(actualCmd, equalTo(expectedCmd));
+    }
+
+    private static String findLocalWorkingCopy() {
+        File temp = buildTargetDirectory;
+        for (; temp.isDirectory(); temp = temp.getParentFile()) {
+            if (temp == null || temp.getParentFile() == null) {
+                throw new AssertionError("Could not find a valid Subversion local working copy in any parent of the " +
+                        "build target directory " + buildTargetDirectory.getAbsolutePath());
+            }
+
+            if (temp.list(dotSVNFilter).length == 1) {
+                return temp.getAbsolutePath();
+            }
+        }
+
+        return "THIS WILL NEVER BE REACHED";
     }
 }

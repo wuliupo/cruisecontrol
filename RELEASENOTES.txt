@@ -13,6 +13,9 @@ general
 * Add ability to connect remote debugger - see: .ant-scripts/build-properties.xml -> remoteDebugJVMArgs
 * Add new systemd service configuration - see: documentation/main/install.html
 * Add support for inclusion of XML files using <xi:include href="something.xml" xpointer='element()'/>
+* Use jdom 2 (jdom.2.0.6) library. It fixes a problem with split CData (see e.g. https://github.com/hunterhacker/jdom/pull/124)
+* Configuration rework. The CC should now be able to start with (almost) empty launch.xml. There is a bit change in meaning of dist, proj, lib and home config options. See the related commit message for details
+* Simple ${xxx} references can be used in launch.xml to refer other options, e.g. ${proj}/cruisecontrol.conf
 
 build loop
 ======================
@@ -26,15 +29,29 @@ Plugin
 * Adds from="" attribute simplifying the pre-configuration of plugins for the default CC tags
 * Adds inherits="" attribute allowing to create simple hierarchical structure of plugins configuration
 
+WriterBuilder
+----------------------
+* New builder which can write mesages to a file added. Written by Tomas Ausberger + Daniel Tihelka
+  It is similar to ent's echo task, but it can be used in projects which do not rely on ant
+
 PipedExecBuilder
 ----------------------
 * Fix memory usage and logging volume issues with PipedExecBuilder (CC-991). Patch by Daniel Tihelka.
 * Add support for gzipstdout and binarystdout to PipedExecBuilder (CC-991). Patch by Daniel Tihelka.
 * Add repipe="" and disable="" attributes to allow change plugin-preconfigured pipes
+* Refactoring of the builder - it now allows to plug 3rd party modules into the pipe. They only must
+  implement PipedScript interface (with the optional use of PipedScriptBase helper class)
+* To disable or re-pipe scrit, use new directives <repipe id="ID" pipefrom="new_pipe"/> (instead of <exec id="ID" repipe="new_pipe"/>) and <disable id="ID"/> (instead of <exec id="ID" disable="true"/>). It is more generic.
+* Scripts may wait to more than one script when set by comma-separated values in <exec ... waitfor="A,B,C"/> attribute. The inner implementation also allows to be piped from more than one script, but it is (naturarly) not allowed for <exec ... /> scripts.
 
 EmailPublisher
 ----------------------
 * Include label in subject of build failure email (CC-1022). Patch by Quinn Styl.
+
+ProjectStatus
+----------------------
+* New SourceControl module designed as the combination of <buildstatus/> (i.e. triggers when the depending project is built with success) and <veto /> (cancels the build when the depending project has modifications not built yet)
+
 
 Dashboard
 ======================

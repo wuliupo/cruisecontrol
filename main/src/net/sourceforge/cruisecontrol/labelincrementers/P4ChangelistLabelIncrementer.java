@@ -59,7 +59,7 @@ import org.apache.tools.ant.Project;
 import org.apache.tools.ant.taskdefs.Delete;
 import org.apache.tools.ant.types.FileSet;
 import org.apache.tools.ant.types.PatternSet.NameEntry;
-import org.jdom.Element;
+import org.jdom2.Element;
 
 /**
  * This class uses the most current changelist of the user in Perforce as the
@@ -224,10 +224,10 @@ public class P4ChangelistLabelIncrementer implements LabelIncrementer {
 
     /**
      * Perform a recursive delete of the clientspec view.  This
-     * will force a clean & sync.  Note that this can potentially
+     * will force a clean {@literal &} sync.  Note that this can potentially
      * be very destructive, so use with the utmost caution.
      *
-     * @param b if true, force clean & sync
+     * @param b if true, force clean {@literal &} sync
      */
     public void setDelete(boolean b) {
         this.delete = b;

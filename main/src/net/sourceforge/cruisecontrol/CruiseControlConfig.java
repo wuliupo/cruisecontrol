@@ -59,7 +59,7 @@ import net.sourceforge.cruisecontrol.gendoc.annotations.Description;
 import net.sourceforge.cruisecontrol.util.Util;
 
 import org.apache.log4j.Logger;
-import org.jdom.Element;
+import org.jdom2.Element;
 
 /**
  * @author <a href="mailto:jerome@coffeebreaks.org">Jerome Lacoste</a>
@@ -74,6 +74,7 @@ public class CruiseControlConfig {
 
     public static final boolean FAIL_UPON_MISSING_PROPERTY = false;
 
+    private static final Map<String, ProjectQuery> PROJECTS_REGISTRY = new HashMap<String, ProjectQuery>();
     private static final Set<String> KNOWN_ROOT_CHILD_NAMES = new HashSet<String>();
     static {
         KNOWN_ROOT_CHILD_NAMES.add("include.projects");
@@ -98,6 +99,24 @@ public class CruiseControlConfig {
 
     private SystemPlugin system;
 
+    /**
+     * Returns the interface through which the state of a project of the given name can be queries.
+     * <p>
+     * Note: the method must be static in order to be accessible from objects not holding reference to the
+     * {@link CruiseControlConfig}. It is partially duplication of {@link #getProject(String)} method.
+     * </p>
+     * @param name the name of project to be found
+     * @return the instance of ProjectChecker for the given name
+     * @throws CruiseControlException if no such project is registered
+     */
+    public static ProjectQuery findProject(final String name) throws CruiseControlException {
+        if (PROJECTS_REGISTRY.containsKey(name)) {
+            return PROJECTS_REGISTRY.get(name);
+        }
+        // No such project
+        throw new CruiseControlException("No project named '" + name + "'");
+    }
+
     public int getMaxNbThreads() {
         if (system != null) {
             if (system.getConfig() != null) {
@@ -114,13 +133,13 @@ public class CruiseControlConfig {
     private final Set<String> customPropertiesPlugins = new HashSet<String>();
 
     public CruiseControlConfig(final Element ccElement) throws CruiseControlException {
-        this(ccElement, new ResolverHolder.DummeResolvers(), null);
+        this(ccElement, new ResolverHolder.DummyResolvers(), null);
     }
 
     public CruiseControlConfig(final Element ccElement, final CruiseControlController controller)
             throws CruiseControlException {
 
-        this(ccElement, new ResolverHolder.DummeResolvers(), controller);
+        this(ccElement, new ResolverHolder.DummyResolvers(), controller);
     }
 
     public CruiseControlConfig(final Element ccElement, final ResolverHolder resolvers)
@@ -132,10 +151,13 @@ public class CruiseControlConfig {
             final CruiseControlController controller) throws CruiseControlException {
         this.resolvers = resolvers;
         this.controller = controller;
+        setLaunchProperties();
         parse(ccElement);
     }
 
     private void parse(final Element ccElement) throws CruiseControlException {
+        // Ignore the <launch>...</launch> section, see LaunchOptions
+        ccElement.removeChild("launch");
         // parse properties and plugins first, so their order in the config file
         // doesn't matter
         for (final Object o : ccElement.getChildren("property")) {
@@ -292,13 +314,27 @@ public class CruiseControlConfig {
 
     private void handleNodeProperties(final Element pluginElement, final String pluginName) {
         final List<Object> properties = new ArrayList<Object>();
-        for (final Object o : pluginElement.getChildren("property")) {
-            properties.add(o);
+        final Set<String> propnodes = new HashSet<String>();
+
+        for (final Object o : pluginElement.getChildren()) {
+            final Element childElement = (Element) o;
+            final String childName = childElement.getName();
+            try {
+                if ("property".equals(childName) || isCustomPropertiesPlugin(childName)) {
+                    properties.add(o);
+                    propnodes.add(childName);
+                }
+            } catch (CruiseControlException e) {
+                LOG.error("Unable to register property " + childElement.getName(), e);
+            }
         }
         if (properties.size() > 0) {
             templatePluginProperties.put(pluginName, properties);
         }
-        pluginElement.removeChildren("property");
+        // Remove the nodes from the element
+        for (String name : propnodes) {
+            pluginElement.removeChildren(name);
+        }
     }
 
     private void handleRootProperty(final Element childElement) throws CruiseControlException {
@@ -328,7 +364,9 @@ public class CruiseControlConfig {
                 final String message = "Project " + name + " included from " + path + " is a duplicate name. Omitting.";
                 LOG.error(message);
             }
-            projects.put(name, includedConfig.getProject(name));
+            final ProjectInterface projobj = includedConfig.getProject(name);
+            projects.put(name, projobj);
+            PROJECTS_REGISTRY.put(name, projobj);
         }
     }
 
@@ -349,6 +387,7 @@ public class CruiseControlConfig {
      * @param plugin only for gendoc
      * @deprecated exists only for gendoc, should not be called.
      */
+    @Deprecated
     @Description("Registers a classname with an alias.")
     public void add(final PluginPlugin plugin) {
         // FIXME this is empty today for the documentation to be generated properly
@@ -359,6 +398,7 @@ public class CruiseControlConfig {
      * @param project only for gendoc
      * @deprecated exists only for gendoc, should not be called.
      */
+    @Deprecated
     @Description("Defines a basic unit of work.")
     @Cardinality(min = 1, max = -1)
     public void add(final ProjectInterface project) {
@@ -370,6 +410,7 @@ public class CruiseControlConfig {
      * @param plugin only for gendoc
      * @deprecated exists only for gendoc, should not be called.
      */
+    @Deprecated
     @Description("Defines a name/value pair used in configuration.")
     public void add(final DefaultPropertiesPlugin plugin) {
         // FIXME currently only declared for documentation generation purposes
@@ -380,6 +421,7 @@ public class CruiseControlConfig {
      * @param dashboard only for gendoc
      * @deprecated exists only for gendoc, should not be called.
      */
+    @Deprecated
     @Description("Configures dashboard-related settings.")
     @Cardinality(min = 0, max = 1)
     public void add(final DashboardConfigurationPlugin dashboard) {
@@ -390,6 +432,7 @@ public class CruiseControlConfig {
     private void handleProject(final Element projectElement) throws CruiseControlException {
 
         final String projectName = getProjectName(projectElement);
+        final Set<String> projectProps = new HashSet<String>();
 
         if (projects.containsKey(projectName)) {
             final String duplicateEntriesMessage = "Duplicate entries in config file for project name " + projectName;
@@ -407,24 +450,18 @@ public class CruiseControlConfig {
         LOG.debug("Setting property \"project.name\" to \"" + projectName + "\".");
         nonFullyResolvedProjectProperties.put("project.name", projectName);
 
-        // handle project templates properties
-        final List projectTemplateProperties = templatePluginProperties.get(projectElement.getName());
-        if (projectTemplateProperties != null) {
-            for (final Object projectTemplateProperty : projectTemplateProperties) {
-                final Element element = (Element) projectTemplateProperty;
-                ProjectXMLHelper.registerProperty(nonFullyResolvedProjectProperties, element,
-                        resolvers, FAIL_UPON_MISSING_PROPERTY);
-            }
-        }
-
         // Register any project specific properties
         for (final Object o : projectElement.getChildren("property")) {
             final Element propertyElement = (Element) o;
+            final String propertyName = propertyElement.getAttributeValue("name");
             ProjectXMLHelper.registerProperty(nonFullyResolvedProjectProperties, propertyElement,
                     resolvers, FAIL_UPON_MISSING_PROPERTY);
+            if (propertyName != null) {
+                projectProps.add(propertyElement.getAttributeValue("name"));
+            }
         }
         // And custom properties plugins
-        for (final Object o : projectElement.getChildren()) {
+        for (final Object o : projectElement.getChildren().toArray()) {
             final Element childElement = (Element) o;
             final String nodeName = childElement.getName();
             if (KNOWN_ROOT_CHILD_NAMES.contains(nodeName)) {
@@ -433,6 +470,32 @@ public class CruiseControlConfig {
             if (isCustomPropertiesPlugin(nodeName)) {
                 ProjectXMLHelper.registerCustomProperty(nonFullyResolvedProjectProperties, childElement,
                     resolvers, FAIL_UPON_MISSING_PROPERTY, PluginRegistry.createRegistry(rootPlugins));
+                projectElement.removeContent(childElement);
+            }
+        }
+
+        // handle project templates properties
+        final List projectTemplateProperties = templatePluginProperties.get(projectElement.getName());
+        if (projectTemplateProperties != null) {
+            for (final Object projectTemplateProperty : projectTemplateProperties) {
+                final Element element = (Element) projectTemplateProperty;
+                final String propertyName = element.getAttributeValue("name");
+
+                // Here it ignores properties defined in <plugin /> with the same name as those
+                // defined in <project />. In this way, the project-defined properties override
+                // the plugin-defined ones.
+                if (propertyName != null && projectProps.contains(element.getAttributeValue("name"))) {
+                    continue;
+                }
+
+                if (isCustomPropertiesPlugin(element.getName())) {
+                    ProjectXMLHelper.registerCustomProperty(nonFullyResolvedProjectProperties,
+                            element.clone(), resolvers, FAIL_UPON_MISSING_PROPERTY,
+                            PluginRegistry.createRegistry(rootPlugins));
+                } else {
+                    ProjectXMLHelper.registerProperty(nonFullyResolvedProjectProperties, element.clone(),
+                            resolvers, FAIL_UPON_MISSING_PROPERTY);
+                }
             }
         }
 
@@ -449,16 +512,27 @@ public class CruiseControlConfig {
         ProjectXMLHelper.parsePropertiesInElement(projectElement, thisProperties, FAIL_UPON_MISSING_PROPERTY);
 
         // Register any custom plugins
+        final ProjectXMLHelper helper = new ProjectXMLHelper(resolvers);
         final PluginRegistry projectPlugins = PluginRegistry.createRegistry(rootPlugins);
+        // First register plugins embedded in the project template, if there are such
+        final Element pparentPlugin = rootPlugins.getPluginConfig(projectElement.getName());
+        if (pparentPlugin != null) {
+            for (final Object o : pparentPlugin.getChildren("plugin")) {
+                final Element element = (Element) o;
+                projectPlugins.from2classname(element);
+
+                final PluginPlugin plugin = (PluginPlugin) helper.configurePlugin(element, false);
+                projectPlugins.register(plugin);
+            }
+        }
+
+        // Register project plugins
         for (final Object o : projectElement.getChildren("plugin")) {
             final Element element = (Element) o;
             projectPlugins.from2classname(element);
 
-            //final PluginPlugin plugin = (PluginPlugin)
-            new ProjectXMLHelper(resolvers).configurePlugin(element, false);
-            // projectPlugins.register(plugin);
-            projectPlugins.register(element);
-            // add(plugin);
+            final PluginPlugin plugin = (PluginPlugin) helper.configurePlugin(element, false);
+            projectPlugins.register(plugin);
         }
 
         projectElement.removeChildren("property");
@@ -481,7 +555,27 @@ public class CruiseControlConfig {
         LOG.debug("**************** end configuring project " + projectName + " *******************");
 
         this.projects.put(projectName, project);
+        this.PROJECTS_REGISTRY.put(projectName, project);
         this.projectPluginRegistries.put(projectName, projectPlugins);
+    }
+
+    /**
+     * Adds the launch properties from {@link Configuration} into {@link #rootProperties}. Each property
+     * is prefixes with "launch." string
+     * @throws CruiseControlException
+     */
+    private void setLaunchProperties() throws CruiseControlException {
+        final CruiseControlOptions conf = CruiseControlOptions.getInstance();
+
+        for (String key : conf.allOptionKeys()) {
+            // Must no be set
+            if (!rootProperties.containsKey(key)) {
+                rootProperties.put("launch." + key, conf.getOptionRaw(key));
+            } else {
+                LOG.info("Trying to set " + key + "=" + conf.getOptionRaw(key) + " property, but it is already "
+                            + "set to " + key + "=" + rootProperties.get(key));
+            }
+        }
     }
 
     private String getProjectName(final Element childElement) throws CruiseControlException {

@@ -63,7 +63,7 @@ import net.sourceforge.cruisecontrol.util.XMLLogHelper;
 
 import org.apache.log4j.Logger;
 import org.apache.xmlrpc.XmlRpcClient;
-import org.jdom.Element;
+import org.jdom2.Element;
 
 /**
  * <p>
@@ -185,7 +185,7 @@ public class WeblogPublisher implements Publisher {
      * in the directory specified by xslDir. By default these are the standard
      * CruseControl xsl files: <br>
      * <ul>
-     * header.xsl maven.xsl etc ...
+     * <li> header.xsl maven.xsl etc ...
      * </ul>
      * I expect this to be used by a derived class to allow someone to change
      * the order of xsl files or to add/remove one to/from the list or a

@@ -36,22 +36,31 @@
  ********************************************************************************/
 package net.sourceforge.cruisecontrol.jmx;
 
+import junit.framework.TestCase;
 import net.sourceforge.cruisecontrol.CruiseControlController;
+import net.sourceforge.cruisecontrol.CruiseControlOptions;
 import net.sourceforge.cruisecontrol.Main;
 import net.sourceforge.cruisecontrol.report.BuildLoopMonitor;
 import net.sourceforge.cruisecontrol.report.BuildLoopMonitorRepository;
-import junit.framework.TestCase;
 
 public class DashboardControllerTest extends TestCase {
     private DashboardController dashboardController;
 
+    @Override
     protected void setUp() throws Exception {
+        CruiseControlOptions.getInstance(this);
+
         super.setUp();
+        BuildLoopMonitorRepository.cancelPosting();
         dashboardController = new DashboardController(new CruiseControlController());
+    }
+    @Override
+    protected void tearDown() throws Exception {
+        CruiseControlOptions.delInstance(this);
     }
 
     public void testShouldBeAbleToDisablePosting() throws Exception {
-        new Main().startPostingToDashboard(new String[0]);
+        new Main().startPostingToDashboard();
         assertNotNull(BuildLoopMonitorRepository.getBuildLoopMonitor());
         dashboardController.stopPostingToDashboard();
         assertNull(BuildLoopMonitorRepository.getBuildLoopMonitor());
@@ -64,7 +73,7 @@ public class DashboardControllerTest extends TestCase {
     }
 
     public void testShouldBeAbleToResetPostingIfThereIsExistingPosting() throws Exception {
-        new Main().startPostingToDashboard(new String[0]);
+        new Main().startPostingToDashboard();
         BuildLoopMonitor existingPosting = BuildLoopMonitorRepository.getBuildLoopMonitor();
         assertNotNull(existingPosting);
 

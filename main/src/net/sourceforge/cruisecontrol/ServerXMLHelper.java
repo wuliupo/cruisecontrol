@@ -38,15 +38,15 @@ package net.sourceforge.cruisecontrol;
 
 import net.sourceforge.cruisecontrol.util.Util;
 import org.apache.log4j.Logger;
-import org.jdom.Attribute;
-import org.jdom.DataConversionException;
-import org.jdom.Element;
+import org.jdom2.Attribute;
+import org.jdom2.DataConversionException;
+import org.jdom2.Element;
 
 import java.io.File;
 
 /**
  * @author Jared Richardson jared.richardson@sas.com
- *         <p/>
+ *         <p>
  *         this routine encapsulates the config file for the application.
  *         it fetches a value from the config file and handles errors.
  */

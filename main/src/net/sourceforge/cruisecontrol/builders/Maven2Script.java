@@ -7,8 +7,8 @@ import java.util.StringTokenizer;
 
 import net.sourceforge.cruisecontrol.util.OSEnvironment;
 import org.apache.log4j.Logger;
-import org.jdom.CDATA;
-import org.jdom.Element;
+import org.jdom2.CDATA;
+import org.jdom2.Element;
 
 import net.sourceforge.cruisecontrol.CruiseControlException;
 import net.sourceforge.cruisecontrol.Progress;
@@ -18,7 +18,7 @@ import net.sourceforge.cruisecontrol.util.StreamConsumer;
 /**
  * Maven2 script class based on the Maven builder class from
  * <a href="mailto:epugh@opensourceconnections.com">Eric Pugh</a>.
- * <br />
+ * <br>
  * Contains all the details related to running a Maven based build.
  * @author Steria Benelux Sa/Nv - Provided without any warranty
  */

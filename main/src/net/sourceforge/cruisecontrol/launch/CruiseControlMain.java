@@ -58,11 +58,17 @@ package net.sourceforge.cruisecontrol.launch;
  */
 public interface CruiseControlMain {
     /**
-     * Start CruiseControl
+     * Gets the implementation of {@link Options} to be filled with the config values. The method must be
+     * called before {@link #start()} to fill the CruiseControl by options set through the {@link Launcher}
      *
-     * @param args
-     *            Command line arguments to be handled directly by CruiseControl
-     *            (passed through the launcher without processing)
+     * @param owner the instance which will be allowed to fill the config, see
+     *          {@link Options#setOption(String, String, Object)}
+     * @return new instance
      */
-    public boolean start(String[] args);
+    public Options confFactory(Object owner);
+    /**
+     * Start CruiseControl
+     * @return <code>true</code> when finished with success, <code>false</code> otherwise.
+     */
+    public boolean start();
 }

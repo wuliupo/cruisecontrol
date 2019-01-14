@@ -56,7 +56,7 @@ import net.sourceforge.cruisecontrol.util.OSEnvironment;
 import net.sourceforge.cruisecontrol.util.PerDayScheduleItem;
 import net.sourceforge.cruisecontrol.util.ValidationHelper;
 
-import org.jdom.Element;
+import org.jdom2.Element;
 
 public abstract class Builder extends PerDayScheduleItem implements Comparable {
 
@@ -169,14 +169,14 @@ public abstract class Builder extends PerDayScheduleItem implements Comparable {
             if (logFilename != null) {
                 outputFile = new File(workingDir, logFilename);
             } else {
+                final String outputSuff = ".tmp";
+                final String outputPref = "ccLiveOutput-" + getFileSystemSafeProjectName(projectName)
+                                + "-" + getClass().getSimpleName() + "-";
                 try {
-                    outputFile = File.createTempFile(
-                            "ccLiveOutput-" + getFileSystemSafeProjectName(projectName)
-                                    + "-" + getClass().getSimpleName() + "-",
-                            ".tmp",
-                            workingDir);
+                    outputFile = File.createTempFile(outputPref, outputSuff, workingDir);
                 } catch (IOException e) {
-                    throw new RuntimeException(e);
+                    throw new RuntimeException("Unable to create temporary file in workingdir="
+                            + workingDir == null ? "<null>" : workingDir.getAbsolutePath(), e);
                 }
             }
             outputFile.deleteOnExit();
@@ -255,7 +255,7 @@ public abstract class Builder extends PerDayScheduleItem implements Comparable {
      *
      * @param env the environment holder
      */
-    protected void mergeEnv(final OSEnvironment env) {
+    public void mergeEnv(final OSEnvironment env) {
         for (final EnvConf e : this.env) {
             e.merge(env);
         }
@@ -265,10 +265,12 @@ public abstract class Builder extends PerDayScheduleItem implements Comparable {
      * Class for the environment variables configuration. They are configured from XML
      * configuration in form:
      * <pre>
+     * {@code
      *   <a_builder ...>
      *      <env name="ENV1" value="" />
      *      <env name="ENV2" delete="true" />
      *   </a_builder>
+     * }
      * </pre>
      *
      * The configured class merges the environment changes with the actual environment
@@ -283,8 +285,8 @@ public abstract class Builder extends PerDayScheduleItem implements Comparable {
         private final Pattern prop = Pattern.compile("\\$\\{([^}]+)\\}");
 
 
-        /** Hidden constructor */
-        private EnvConf() {
+        /** Constructor */
+        public EnvConf() {
             name = "";
             value = null;
         }
@@ -323,7 +325,7 @@ public abstract class Builder extends PerDayScheduleItem implements Comparable {
          *         or <code>null</code> if no environment variable was defined yet.
          */
         public String getValue() {
-            return this.name;
+            return this.value;
         } // setName
         /**
          * Mark the environment variable to delete. Avoid explicit calls of the method
@@ -369,6 +371,13 @@ public abstract class Builder extends PerDayScheduleItem implements Comparable {
                 // Set the new value
                 env.add(name, sb.toString());
             }
+        }
+
+        /** Copy the content of EnvConf to this class.
+         *  @param env the name-value pair to copy */
+        public void copy(final EnvConf env) {
+          this.name = env.name;
+          this.value = env.value;
         }
 
     } // EnvConf

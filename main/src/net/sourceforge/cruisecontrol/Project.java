@@ -36,12 +36,14 @@
  ********************************************************************************/
 package net.sourceforge.cruisecontrol;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -49,6 +51,9 @@ import java.util.Map;
 
 import javax.management.JMException;
 import javax.management.MBeanServer;
+
+import org.apache.log4j.Logger;
+import org.jdom2.Element;
 
 import net.sourceforge.cruisecontrol.events.BuildProgressEvent;
 import net.sourceforge.cruisecontrol.events.BuildProgressListener;
@@ -58,16 +63,15 @@ import net.sourceforge.cruisecontrol.jmx.ProjectController;
 import net.sourceforge.cruisecontrol.listeners.ProjectStateChangedEvent;
 import net.sourceforge.cruisecontrol.util.CVSDateUtil;
 import net.sourceforge.cruisecontrol.util.DateUtil;
-
-import org.apache.log4j.Logger;
-import org.jdom.Element;
+import net.sourceforge.cruisecontrol.util.Util;
+import net.sourceforge.cruisecontrol.util.XMLLogHelper;
 
 /**
  * Represents a single logical project consisting of source code that needs to
  * be built.  Project is associated with bootstrappers that run before builds
  * and a Schedule that determines when builds occur.
  */
-public class Project implements Serializable, Runnable {
+public class Project implements Serializable, Runnable, ProjectQuery {
     private static final long serialVersionUID = 2656877748476842326L;
     private static final Logger LOG = Logger.getLogger(Project.class);
 
@@ -119,6 +123,7 @@ public class Project implements Serializable, Runnable {
         waitMutex = new Object();
         progressListeners = new ArrayList<BuildProgressListener>();
         resultListeners = new ArrayList<BuildResultListener>();
+        queue = new BuildQueue();
 
         progress = new ProgressImpl(this);
     }
@@ -264,6 +269,8 @@ public class Project implements Serializable, Runnable {
             // @todo Add Progress param to Publisher API?
             publish(buildLog);
             buildLog.reset();
+        } catch (SourceControl.VetoException exc) { // cancel the build gracefully when veto required
+            info("build cancelled: " + exc.getMessage());
         } finally {
             resetBuildForcedOnlyIfBuildWasForced(buildWasForced);
             setState(ProjectState.IDLE);
@@ -811,6 +818,10 @@ public class Project implements Serializable, Runnable {
      * CruiseControl build log.
      * @param message the application message to log
      */
+    private void warn(final String message) {
+        LOG.warn("Project " + name + ":  " + message);
+    }
+
     private void info(final String message) {
         LOG.info("Project " + name + ":  " + message);
     }
@@ -855,6 +866,7 @@ public class Project implements Serializable, Runnable {
         }
     }
 
+    @Override
     public String toString() {
         final StringBuilder sb = new StringBuilder("Project ");
         sb.append(getName());
@@ -923,6 +935,7 @@ public class Project implements Serializable, Runnable {
         }
     }
 
+    @Override
     public boolean equals(final Object arg0) {
         if (arg0 == null) {
             return false;
@@ -936,6 +949,7 @@ public class Project implements Serializable, Runnable {
         return false;
     }
 
+    @Override
     public int hashCode() {
         return name.hashCode();
     }
@@ -965,4 +979,81 @@ public class Project implements Serializable, Runnable {
     public String[] getLogLabelLines(final String logLabel, final int firstLine) {
         return projectConfig.getLogLabelLines(logLabel, firstLine);
     }
+
+    @Override
+    public Map<String, String> getProperties() {
+        return projectConfig.getProperties();
+    }
+
+    @Override
+    public List<Modification> modificationsSinceLastBuild() {
+        final ModificationSet modificationSet = projectConfig.getModificationSet();
+
+        // modificationSet can be null when no modification set is set
+        if (modificationSet == null) {
+            warn("No modification set got from " + projectConfig.getName() + ", pretending 'not-modified status'");
+            return Collections.emptyList();
+        }
+
+        info("Getting changes since last successful build");
+        modificationSet.retrieveModificationsAsElement(lastSuccessfulBuild, progress);
+        return modificationSet.getCurrentModifications();
+    }
+
+    @Override
+    public List<Modification> modificationsSince(final Date since) {
+        final List<Modification> modifications = new ArrayList<Modification>();
+        final String logDirectory = getLog().getLogDir();
+        final List<String> logs = getLog().getLogLabels();
+
+        // The log directory was not set, print warning and return empty list
+        if (logDirectory == null) {
+            LOG.warn("Unable to get modificatiosn since " + since + " as the project[" + getName()
+                    + "] has no <log /> configured");
+            return modifications;
+        }
+
+        // Read all the build-successful log files since the given time
+        try {
+            for (final String logName : logs) {
+                // Skip those not successful and those too old
+                if (!Log.wasSuccessfulBuild(logName) || Log.parseDateFromLogFileName(logName).before(since)) {
+                    continue;
+                }
+                // Read the XML
+                final Element logData = Util.loadRootElement(new File(logDirectory, logName));
+                final XMLLogHelper logElem = new XMLLogHelper(logData);
+                modifications.addAll(logElem.getModifications());
+            }
+        } catch (Exception e) {
+            LOG.error("Error checking for modifications", e);
+        }
+
+        return modifications;
+    }
+
+    @Override
+    public Date successLastBuild() {
+        return buildCounter == 0 ? new Date(0) : lastSuccessfulBuild;
+    }
+
+    @Override
+    public String successLastLabel() {
+        return buildCounter == 0 ? "" : label;
+    }
+
+    @Override
+    public String successLastLog() {
+        final List<String> labels = getLogLabels();
+        final String latest = successLastLabel();
+
+        for (String l : labels) {
+             if (latest.equals(Log.parseLabelFromLogFileName(l))) {
+                 return l;
+             }
+        }
+        // Not build yet
+        return "";
+    }
+
 }

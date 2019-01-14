@@ -52,7 +52,7 @@ import org.apache.log4j.Logger;
  * Class which buffers stdout from a command (as {@link OutputStream} to which the data are written)
  * and provides it to multiple readers as {@link InputStream} (see {@link StdoutBuffer#getContent()}).
  * The buffer can be read as many times as required.
- * <p/>
+ * <p>
  * The {@link StdoutBuffer} filling and {@link StdoutBuffer#getContent()} stream reading operations are
  * thread safe. However the individual methods of {@link StdoutBuffer} and {@link StdoutBuffer#getContent()}
  * instance are not (they are supposed to be called within one thread)!
@@ -61,9 +61,9 @@ import org.apache.log4j.Logger;
  */
 public class StdoutBuffer extends OutputStream {
 
-    static final String MSG_READER_ALREADY_CLOSED = "Reader already closed";
+  static final String MSG_READER_ALREADY_CLOSED = "Reader already closed";
 
-    /**
+  /**
    * Constructor.
    *
    * @param logger the instance of Logger through which to log.
@@ -133,7 +133,7 @@ public class StdoutBuffer extends OutputStream {
 
   /**
    * Implementation of {@link OutputStream#close()}
-   * <p/>
+   * <p>
    * Closes the buffer, which signalizes that no more data will be written to the buffer.
    * It is necessary for {@link InputStream} returned by {@link #getContent()} to signalize
    * that all the data were read. Otherwise (the end of buffer is not known), reading from the
@@ -187,7 +187,7 @@ public class StdoutBuffer extends OutputStream {
   /**
    * Returns stream from which the content of the buffer can be read. The method can be called multiple times (as many
    * times as wanted), always returning new reader reading buffer from the beginning.
-   * <p/>
+   * <p>
    * Note that reading the stream in an independent thread is save (related to writing to the buffer
    * from another thread), and it is highly recommended!
    *
@@ -217,11 +217,12 @@ public class StdoutBuffer extends OutputStream {
    * data written to the returned stream must end up in the <code>stream</code>, from which
    * they are read and stored in the {@link #buffer}:
    *
-   * data -> stream[dataEncoder(OutputStream) -> {@link #buffer} ->
-   *      -> stream[{@link #dataDecoder(InputStream)}]  -> data
-   * </p>
+   * {@literal data -> stream[dataEncoder(OutputStream) -> {@link #buffer} ->
+   *                -> stream[{@link #dataDecoder(InputStream)}]  -> data
+   * }
+   * <p>
    * This implementation returns back the <code>stream</code> instance.
-   * </p>
+   * <p>
    * It is ensured that this method is called prior to {@link #dataDecoder(InputStream)}.
    *
    * @param  stream the stream into which the data are required to be written once
@@ -239,9 +240,10 @@ public class StdoutBuffer extends OutputStream {
    * passed through dataDecoder(InputStream) stream. When read then, they
    * must be in the same form as written to the stream returned by {@link #dataEncoder(OutputStream)}:
    *
-   * data -> stream[{@link #dataEncoder(OutputStream)}] -> {@link #buffer} ->
-   *      -> stream[dataDecoder(InputStream)]  -> data
-   * </p>
+   * {@literal data -> stream[{@link #dataEncoder(OutputStream)}] -> {@link #buffer} ->
+   *                -> stream[dataDecoder(InputStream)]  -> data
+   * }
+   * <p>
    * This implementation returns back the <code>stream</code>.
    *
    * @param  stream the stream into which the data are required to be written once
@@ -262,10 +264,10 @@ public class StdoutBuffer extends OutputStream {
    * The array with all the data passed to the buffer through <code>write()</code> methods. The data
    * are stored in the buffer here, and they can read many times through stream provided by
    * {@link #getContent()}).
-   * <p/>
+   * <p>
    * If the last item in the buffer is <code>null</code>, it signalizes that the whole buffer
    * was filled and no more items will be added, see {@link #close()}.
-   * <p/>
+   * <p>
    * The work with the variable MUST BE hold in critical section. However, items are added to the buffer
    * only - once a chunk of bytes is in the buffer, it is neither changed not deleted.
    */
@@ -383,53 +385,20 @@ public class StdoutBuffer extends OutputStream {
         */
        @Override
        public final int read() throws IOException {
-           /* Must not be closed */
-           if (isClosed) {
-               throw new IOException(MSG_READER_ALREADY_CLOSED);
-           }
+           byte[] data = new byte[1];
+           int numRead = read(data, 0, 1);
+           int out     = data[0];
 
-           /* ------------
-            * Get the current buffer  */
-           byte[] currChunk;
-           int    currByte;
-
-           /* Must be in synchronized section due to wait() method */
-           synchronized (bufferInst) {
-               /* Bad state!!?? */
-               if (bufferInst.size() <  chunkInd) {
-                   throw new IOException("Reader outran the buffer?");
-               }
-
-               /* If nothing to read, wait until notified */
-               if (bufferInst.size() == chunkInd) {
-                   try {
-                       bufferInst.wait();
-                   } catch (InterruptedException tExc) {
-                       log.error("Unexpected interruption when waiting for data", tExc);
-                       return -1;
-                   }
-               }
-
-               /* Get the current chunk. It cannot change once it is in the buffer */
-               currChunk = bufferInst.get(chunkInd);
-           } // synchronized
-
-           /* ------------
-            * If the current chunk is empty, EOF was reached */
-           if (currChunk == null) {
+           /* Return -1 when at the end of stream */
+           if (numRead < 0) {
                return -1;
            }
-
-           /* Read the byte from the buffer */
-           currByte = currChunk[chunkPos++];
-           /* Was the whole buffer read? Set the new if so */
-           if (chunkPos >= currChunk.length) {
-               chunkPos = 0;
-               chunkInd++;
+           /* Convert byte to 0-255 range */
+           if (out < 0) {
+               out = (256 + out);
            }
-
-           /* Return the byte read, converted to the <0, 255> range */
-           return currByte >= 0 ? currByte : (256 + currByte);
+           /* Return -1 when at the end of stream, or the value just read instead */
+           return out;
        } // read
 
        /**

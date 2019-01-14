@@ -39,23 +39,26 @@ package net.sourceforge.cruisecontrol;
 import java.io.File;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.management.JMException;
 import javax.management.MBeanServer;
 
 import junit.framework.TestCase;
+import net.sourceforge.cruisecontrol.builders.ExecBuilder;
 import net.sourceforge.cruisecontrol.labelincrementers.DefaultLabelIncrementer;
 import net.sourceforge.cruisecontrol.listeners.ListenerTestNestedPlugin;
 import net.sourceforge.cruisecontrol.listeners.ListenerTestOtherNestedPlugin;
 import net.sourceforge.cruisecontrol.listeners.ListenerTestPlugin;
+import net.sourceforge.cruisecontrol.testutil.TestUtil;
 import net.sourceforge.cruisecontrol.util.OSEnvironment;
 import net.sourceforge.cruisecontrol.util.Util;
-import net.sourceforge.cruisecontrol.testutil.TestUtil;
 
-import org.jdom.Element;
+import org.jdom2.Element;
 
 public class CruiseControlConfigTest extends TestCase {
 
@@ -68,7 +71,13 @@ public class CruiseControlConfigTest extends TestCase {
 
     private static final int ONE_SECOND = 1000;
 
+    @Override
     protected void setUp() throws Exception {
+        // Fill properties to be tested
+        CruiseControlOptions settings = CruiseControlOptions.getInstance(this);
+        settings.setOption("user", "value_for_user", this);
+        settings.setOption("ccname", "value_for_ccname", this);
+
         URL url;
         url = this.getClass().getClassLoader().getResource("net/sourceforge/cruisecontrol/test.properties");
         propertiesFile = new File(URLDecoder.decode(url.getPath(), "utf-8"));
@@ -99,6 +108,7 @@ public class CruiseControlConfigTest extends TestCase {
         config = new CruiseControlConfig(ccElement);
     }
 
+    @Override
     protected void tearDown() {
         filesToDelete.delete();
 
@@ -106,6 +116,8 @@ public class CruiseControlConfigTest extends TestCase {
         configFile = null;
         classpathDirectory = null;
         config = null;
+
+        CruiseControlOptions.delInstance(this);
     }
 
     public void testUseNonDefaultProjects() throws CruiseControlException {
@@ -182,6 +194,33 @@ public class CruiseControlConfigTest extends TestCase {
         public void validate() throws CruiseControlException {
         }
 
+        public Map<String, String> getProperties() {
+            return null;
+        }
+
+        public List<Modification> modificationsSinceLastBuild() {
+            return null;
+        }
+
+        public Date successLastBuild() {
+            return null;
+        }
+
+        public List<Modification> modificationsSince(Date since) {
+            return null;
+        }
+
+        public String getLogDir() {
+            return null;
+        }
+
+        public String successLastLabel() {
+            return null;
+        }
+
+        public String successLastLog() {
+            return null;
+        }
     }
 
     public void testProjectNamesShouldMatchOrderInFile() {
@@ -195,7 +234,7 @@ public class CruiseControlConfigTest extends TestCase {
     }
 
     public void testGetProjectNames() {
-        assertEquals(15, config.getProjectNames().size());
+        assertEquals(25, config.getProjectNames().size());
     }
 
     public void testGlobalProperty() throws Exception {
@@ -257,6 +296,78 @@ public class CruiseControlConfigTest extends TestCase {
         String targetProject = "propsinpropsdef";
         String expectedPropertyValue = new OSEnvironment().getVariableIgnoreCase("PATH");
         assertPropertyValue(targetProject, expectedPropertyValue);
+    }
+
+    // test that we are capable of resolving properties redefined in various ways
+    public void testPropertiesRedefine() throws Exception {
+        ListenerTestPlugin listener;
+        ProjectConfig projConfig = (ProjectConfig) config.getProject("inherit1");
+        List<Listener> listeners = projConfig.getListeners();
+
+        listener = (ListenerTestPlugin) listeners.get(0);
+        assertEquals("override", listener.getString());
+
+        listener = (ListenerTestPlugin) listeners.get(1);
+        assertEquals("test", listener.getString());
+
+        listener = (ListenerTestPlugin) listeners.get(2);
+        assertEquals("filled_test", listener.getString());
+
+        listener = (ListenerTestPlugin) listeners.get(3);
+        assertEquals("value", listener.getString());
+
+
+        projConfig = (ProjectConfig) config.getProject("inherit2");
+        listeners = projConfig.getListeners();
+
+        listener = (ListenerTestPlugin) listeners.get(0);
+        assertEquals("works!", listener.getString());
+
+        listener = (ListenerTestPlugin) listeners.get(1);
+        assertEquals("empty", listener.getString());
+
+        listener = (ListenerTestPlugin) listeners.get(2);
+        assertEquals("filled_empty", listener.getString());
+
+        listener = (ListenerTestPlugin) listeners.get(3);
+        assertEquals("temp", listener.getString());
+    }
+
+    // test that we are capable of resolving properties redefined in various ways
+    public void testCustomProperties() throws Exception {
+        MockProjectInterface projConfig;
+        MockProjectInterface.Foo foo;
+
+        projConfig = (MockProjectInterface) config.getProject("customprops1");
+        foo = projConfig.getFoo();
+        assertEquals("mockval_value", foo.getName());
+
+        projConfig = (MockProjectInterface) config.getProject("customprops2");
+        foo = projConfig.getFoo();
+        assertEquals("mockval_customprops2", foo.getName());
+
+        projConfig = (MockProjectInterface) config.getProject("customprops3");
+        foo = projConfig.getFoo();
+        assertEquals("mockval_temp", foo.getName());
+
+        projConfig = (MockProjectInterface) config.getProject("customprops4");
+        foo = projConfig.getFoo();
+        assertEquals("mockval_justval", foo.getName());
+
+        projConfig = (MockProjectInterface) config.getProject("customprops5");
+        foo = projConfig.getFoo();
+        assertEquals("local-in-customprops5_filled", foo.getName());
+
+        projConfig = (MockProjectInterface) config.getProject("customprops6");
+        foo = projConfig.getFoo();
+        assertEquals("local-in-customprops6_filled_works!", foo.getName());
+    }
+
+    public void testSettingsProperties() throws Exception {
+        MockProjectInterface projConfig;
+
+        projConfig = (MockProjectInterface) config.getProject("settings");
+        assertEquals("value_for_ccname + value_for_user", projConfig.getFoo().getName());
     }
 
     // TODO backport
@@ -333,6 +444,77 @@ public class CruiseControlConfigTest extends TestCase {
         assertEquals("notshadowing", nested.getString());
         assertEquals(null, nested.getOtherString());
         assertEquals("otherother", ((ListenerTestOtherNestedPlugin) nested).getOtherOtherString());
+    }
+
+    public void testPluginConfigurationInherit() throws Exception {
+        ExecBuilder builder = new ExecBuilder();
+        // Get the working directory when not explicitly set
+        builder.setCommand("foo");
+        builder.validate();
+        final String wdir = builder.getWorkingDir();
+
+        // project override1
+        ProjectConfig projConfig = (ProjectConfig) config.getProject("inherit1");
+        List builders = projConfig.getSchedule().getBuilders();
+        assertEquals(5, builders.size());
+
+        builder = (ExecBuilder)builders.get(0);
+        assertEquals("cX", builder.getCommand());
+        assertEquals("dA", builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(1);
+        assertEquals("cB", builder.getCommand());
+        assertEquals("dB", builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(2);
+        assertEquals("cZ", builder.getCommand());
+        assertEquals(wdir, builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(3);
+        assertEquals("c+", builder.getCommand());
+        assertEquals(wdir, builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(4);
+        assertEquals("c*", builder.getCommand());
+        assertEquals("dE", builder.getWorkingDir());
+
+        // project override2
+        projConfig = (ProjectConfig) config.getProject("inherit2");
+        builders = projConfig.getSchedule().getBuilders();
+        assertEquals(5, builders.size());
+
+        builder = (ExecBuilder)builders.get(0);
+        assertEquals("cX", builder.getCommand());
+        assertEquals("dA", builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(1);
+        assertEquals("cB", builder.getCommand());
+        assertEquals("dB", builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(2);
+        assertEquals("cX", builder.getCommand());
+        assertEquals("dA", builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(3);
+        assertEquals("c+", builder.getCommand());
+        assertEquals(wdir, builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(4);
+        assertEquals("c*", builder.getCommand());
+        assertEquals("dE", builder.getWorkingDir());
+
+        // project override1
+        projConfig = (ProjectConfig) config.getProject("inherit3");
+        builders = projConfig.getSchedule().getBuilders();
+        assertEquals(5, builders.size());
+
+        builder = (ExecBuilder)builders.get(0);
+        assertEquals("foo", builder.getCommand());
+        assertEquals(wdir, builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(1);
+        assertEquals("cB", builder.getCommand());
+        assertEquals("dB", builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(2);
+        assertEquals("cZ", builder.getCommand());
+        assertEquals(wdir, builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(3);
+        assertEquals("c+", builder.getCommand());
+        assertEquals(wdir, builder.getWorkingDir());
+        builder = (ExecBuilder)builders.get(4);
+        assertEquals("c*", builder.getCommand());
+        assertEquals("dE", builder.getWorkingDir());
     }
 
     // TODO DateFormat management was moved to Project.init()

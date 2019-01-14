@@ -40,9 +40,9 @@ package net.sourceforge.cruisecontrol;
 import net.sourceforge.cruisecontrol.util.DateUtil;
 
 import org.apache.log4j.Logger;
-import org.jdom.CDATA;
-import org.jdom.Element;
-import org.jdom.output.XMLOutputter;
+import org.jdom2.CDATA;
+import org.jdom2.Element;
+import org.jdom2.output.XMLOutputter;
 
 import java.io.Serializable;
 import java.text.ParseException;
@@ -55,11 +55,14 @@ import java.util.Iterator;
 /**
  * data structure for holding data about a single modification
  * to a source control tool.
- *
+ * <pre>
+ * {@code
  * <modification type="" date="" user="" email="">
  *     <comment></comment>
  *     <file >
  * </modification>
+ * }
+ * </pre>
  *
  * @author <a href="mailto:alden@thoughtworks.com">alden almagro</a>
  */
@@ -96,7 +99,7 @@ public class Modification implements Comparable<Modification>, Serializable {
             this.folderName = folderName;
             this.action = action;
         }
-        
+
         public ModifiedFile(final Element modification) {
             fileName = modification.getChildText(TAGNAME_FILENAME);
             folderName = modification.getChildText(TAGNAME_FOLDERNAME);
@@ -238,7 +241,7 @@ public class Modification implements Comparable<Modification>, Serializable {
         CDATA cd;
         try {
             cd = new CDATA(comment);
-        } catch (org.jdom.IllegalDataException e) {
+        } catch (org.jdom2.IllegalDataException e) {
             LOG.error(e);
             cd = new CDATA("Unable to parse comment.  It contains illegal data.");
         }

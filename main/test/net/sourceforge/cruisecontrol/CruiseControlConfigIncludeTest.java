@@ -5,11 +5,12 @@ import java.io.InputStream;
 
 
 import junit.framework.TestCase;
+import net.sourceforge.cruisecontrol.CruiseControlOptions;
 import net.sourceforge.cruisecontrol.config.FileResolver;
 import net.sourceforge.cruisecontrol.config.XmlResolver;
 import net.sourceforge.cruisecontrol.util.Util;
 
-import org.jdom.Element;
+import org.jdom2.Element;
 
 public class CruiseControlConfigIncludeTest extends TestCase implements ResolverHolder {
 
@@ -18,7 +19,10 @@ public class CruiseControlConfigIncludeTest extends TestCase implements Resolver
     private XmlResolver xmlResolver;
     private FileResolver fileResolver;
 
+    @Override
     protected void setUp() throws Exception {
+        CruiseControlOptions.getInstance(this);
+
         final StringBuilder configText = new StringBuilder(200);
         configText.append("<cruisecontrol>");
         configText.append("  <plugin name='foo.project'");
@@ -38,7 +42,9 @@ public class CruiseControlConfigIncludeTest extends TestCase implements Resolver
         fileResolver = new EmptyFileResolver();
     }
 
+    @Override
     protected void tearDown() throws Exception {
+        CruiseControlOptions.delInstance(this);
         rootElement = null;
         includeElement = null;
         xmlResolver = null;

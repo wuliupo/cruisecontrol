@@ -60,7 +60,7 @@ import net.sourceforge.cruisecontrol.labelincrementers.DefaultLabelIncrementer;
 import net.sourceforge.cruisecontrol.util.Util;
 
 import org.apache.log4j.Logger;
-import org.jdom.Element;
+import org.jdom2.Element;
 
 /**
  * A plugin that represents the whole XML config file.
@@ -100,7 +100,7 @@ public class DashboardConfig {
     private final ResolverHolder resolvers;
 
     public DashboardConfig(final Element ccElement) throws CruiseControlException {
-        this(ccElement, new ResolverHolder.DummeResolvers());
+        this(ccElement, new ResolverHolder.DummyResolvers());
     }
 
     public DashboardConfig(final Element ccElement, final ResolverHolder resolvers)

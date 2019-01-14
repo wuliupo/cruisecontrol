@@ -46,13 +46,14 @@ import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
 import net.sourceforge.cruisecontrol.CruiseControlException;
 
-import org.jdom.Element;
-import org.jdom.input.SAXBuilder;
+import org.jdom2.Element;
+import org.jdom2.input.SAXBuilder;
 
 public final class Util {
 
@@ -61,7 +62,7 @@ public final class Util {
 
     public static Element loadRootElement(File configFile) throws CruiseControlException {
         try {
-            SAXBuilder builder = new SAXBuilder("org.apache.xerces.parsers.SAXParser");
+            SAXBuilder builder = new SAXBuilder();
             builder.setFeature("http://apache.org/xml/features/xinclude", true);
             return builder.build(configFile).getRootElement();
         } catch (Exception e) {
@@ -283,6 +284,15 @@ public final class Util {
                     } else {
                         // we don't resolve missing properties
                         value = "${" + propertyName + "}";
+                    }
+                } else { // Try one more to resolve recursive properties
+                    String key = "!!!" + value + "!!!";
+                    // If the property has already been resolved, ignore it here. It prevents
+                    // infinite properties recursion
+                    if (!props.containsKey(key)) {
+                        final Map<String, String> props2 = new HashMap<String, String>(props);
+                        props2.put(key, "");
+                        value = parsePropertiesInString(props2, value, failIfMissing);
                     }
                 }
                 string = string.substring(0, startIndex) + value

@@ -36,7 +36,7 @@
  ********************************************************************************/
 package net.sourceforge.cruisecontrol;
 
-import org.jdom.Element;
+import org.jdom2.Element;
 
 /**
  * Manages the config.
@@ -46,4 +46,5 @@ public interface ProjectHelper extends ResolverHolder {
     Object configurePlugin(Element pluginElement, boolean skipChildElements)
             throws CruiseControlException;
 
+    Element resolveProperties(Element objectElement);
 }

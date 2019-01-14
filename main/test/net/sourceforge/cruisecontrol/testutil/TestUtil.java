@@ -37,34 +37,154 @@
 
 package net.sourceforge.cruisecontrol.testutil;
 
-import junit.framework.Assert;
-import net.sourceforge.cruisecontrol.util.IO;
-import org.jdom.Document;
-import org.jdom.Element;
-
 import java.io.File;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Vector;
+
+import org.jdom2.Document;
+import org.jdom2.Element;
+
+import junit.framework.Assert;
+import net.sourceforge.cruisecontrol.util.Commandline;
+import net.sourceforge.cruisecontrol.util.IO;
 
 public final class TestUtil {
     public static class FilesToDelete {
-        private final List<File> files = new Vector<File>();
-    
-        public void add(File file) {
-            files.add(file);
+        private final static File tmpdir;
+
+        /** Static initializer; fills #tmpdir */
+        static {
+            File t;
+
+            try {
+                t = new FilesToDelete().add(FilesToDelete.class).getParentFile();
+            } catch (IOException e) {
+                // If fails, get the root directory. Most likely the directory will not be writable and the tests
+                // will start to fail. But I think it is better than to pretend that everything is OK ...
+                t = new File("/");
+                // Leave a message
+                System.err.println("------------");
+                System.err.println("Unable to get the temporary dir, setting it to: [" + t.getAbsolutePath() + "]");
+                System.err.println("Reported error:");
+                e.printStackTrace(System.err);
+                System.err.println("------------");
+            }
+            // Set the dir
+            tmpdir = t;
         }
-    
+
+
+        private final List<File> files = new Vector<File>();
+
+        /**
+         * Returns the path to the (temporary) directory in which the files are created
+         * @return the path to tmpdir
+         */
+        public static File tmpdir() {
+            return tmpdir;
+        }
+
+        public File add(File file) {
+             files.add(file);
+             return file;
+        }
+
+        public File add(String file) throws IOException {
+            return add(file, null);
+        }
+
+        /**
+         * Creates an empty file in the default temporary-file directory, using the name
+         * of the object's class as the prefix. Automatically adds the name into the list of files
+         * hold by the class.
+         * @param obj the calling class (used to get its name as temporary file pattern)
+         * @return a new temp file
+         * @throws IOException when the file cannot be created
+         */
+        public File add(Object obj) throws IOException {
+            return add(obj.getClass().getName(), null);
+        }
+        /**
+         * Creates an empty file in the default temporary-file directory, using the given prefix
+         * and suffix to generate its name. Automatically adds the name into the list of files
+         * hold by the class.
+         * @param prefix the prefix string passed to {@link File.createTempFile(String, String)}
+         * @param suffix the suffix string passed to {@link File.createTempFile(String, String)}
+         * @return a new file
+         * @throws IOException when the file cannot be created
+         */
+        public File add(String prefix, String suffix) throws IOException {
+            final File file = File.createTempFile(prefix, suffix);
+            return add(file);
+        }
+
+        /** The same as {@link #add(String, String)} but creates directory instead of a file */
+        public File adddir(String prefix, String suffix) throws IOException {
+            final File file = add(prefix, suffix);
+            // Delete the file
+            IO.delete(file);
+
+            if (! file.mkdirs()) {
+                throw new IOException("Unable to create directory ["+file+"]");
+            }
+            return add(file);
+        }
+
         public void delete() {
             for (File file : files) {
                 IO.delete(file);
             }
             files.clear();
         }
+
+        /** "Destructor" */
+        @Override
+        protected void finalize() {
+            delete();
+        }
     }
+
+    /**
+     * Records and restores properties get by System.get ...
+     */
+    public static class PropertiesRestorer {
+
+        private final Map<String, String> recordedProps = new HashMap<String, String>();
+
+        /**
+         * Stores all properties as they are defined in the time of the call of the method.
+         * It is recommended to call this method in @link {@link TestCase#setUp()} or in the constructor
+         * of a particular test
+         */
+        public void record() {
+            recordedProps.clear();
+            // Cop item-by-item to prevent shallow copy
+            for (String name : System.getProperties().stringPropertyNames()) {
+                recordedProps.put(name, System.getProperty(name));
+            }
+        }
+
+        /**
+         * Resets properties into the state as they were recorded in @link {@link #record()}.
+         * It is recommended to call this method in @link {@link TestCase#tearDown()}.
+         */
+        public void restore() {
+            System.getProperties().clear();
+            // Cop item-by-item to prevent shallow copy
+            for (Entry<String, String> p : recordedProps.entrySet()) {
+                System.setProperty(p.getKey(), p.getValue());
+            }
+        }
+    }
+
 
     private static File targetDir;
     public static File getTargetDir() {
@@ -215,11 +335,72 @@ public final class TestUtil {
         Assert.assertEquals(msg, Arrays.asList(refarr), Arrays.asList(testarr));
     }
 
+    /**
+     * Checks if the given arguments are in the command line. The assert succeeds when all the expected
+     * arguments are found in the given command line and no other attributes remain.
+     *
+     * @param expect the array of expected command line options and their values, grouped according to their
+     *      expected meaning. For example, having:
+     *      "foo -opt1 val1 -opt2 -opt3 val3.1 val3.2 arg1 arg2"
+     *      command line, it is recommended to pass expected arguments as:
+     *      ["foo", "-opt1 val1", "-opt2", "-opt3 val3.1 val3.2", "arg1", "arg2"]
+     * @param args the array of command line arguments as get e.g. by {@link Commandline#getCommandline()}
+     */
+    public static void assertCommandLine(final String[] expect, final String[] args) {
+        StringBuffer sb = new StringBuffer(256);
+        for (String a : args) {
+            sb.append(a);
+            sb.append(' ');
+        }
+        final String o = sb.toString();
+      //final String o = String.join(" ", args); Works on java-8 and higher ...
+        String a = o;
+
+        // Match all the commands
+        for (final String e : expect) {
+             a = assertCommandLine(e, a, o);
+        }
+        // Must be empty
+        if (!a.trim().isEmpty()) {
+            Assert.fail("No full match. [" + a + "] not matched to anything in [" + o + "]");
+        }
+    }
+    // Helper for #assertCommandLine(String[], String[])
+    private static String assertCommandLine(final String expect, final String args, final String argsFull) {
+        final int beg = args.indexOf(expect);
+        final int end = beg + expect.length();
+
+        // Not found
+        if (beg < 0) {
+            Assert.fail("No [" + expect + "] in [" + argsFull + "]");
+            return args;
+        }
+        // Space must preceed
+        if (beg > 0 && args.charAt(beg -1) != ' ') {
+            Assert.fail("No [" + expect + "] in [" + argsFull + "] as an argument");
+            return args;
+        }
+        // Space must follow
+        if (end < args.length() && args.charAt(end) != ' ') {
+            Assert.fail("No [" + expect + "] in [" + argsFull + "] as an argument");
+            return args;
+        }
+
+        // Remove the part which has been matched
+        if (end < args.length()) {
+            return args.substring(0, beg) + args.substring(end +1);
+        }
+        else {
+            return args.substring(0, beg);
+        }
+    }
+
+
     public static void addProperty(Element e, String name, String value) {
         Element prop = new Element("property");
         prop.setAttribute("name", name);
         prop.setAttribute("value", value);
         e.addContent(prop);
     }
-    
+
 }

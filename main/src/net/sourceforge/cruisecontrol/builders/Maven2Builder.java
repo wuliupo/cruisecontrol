@@ -14,14 +14,15 @@ import net.sourceforge.cruisecontrol.util.DateUtil;
 import net.sourceforge.cruisecontrol.util.OSEnvironment;
 import net.sourceforge.cruisecontrol.util.Util;
 import net.sourceforge.cruisecontrol.util.ValidationHelper;
+
 import org.apache.log4j.Logger;
-import org.jdom.Element;
-import org.jdom.Attribute;
+import org.jdom2.Attribute;
+import org.jdom2.Element;
 
 /**
  * Maven2 builder class based on the Maven builder class from
  * <a href="mailto:fvancea@maxiq.com">Florin Vancea</a>.
- * <br />
+ * <br>
  * Attempts to mimic the behavior of Ant builds, at least as far as CC is
  * concerned. Basically it's a (heavily) edited version of AntBuilder. No style
  * at all, but serves its purpose. :)
@@ -131,6 +132,7 @@ public class Maven2Builder extends Builder {
      * @param showMavenOutput true if a BuildOutputLogger will be used to show live output.
      * @deprecated Use {@link #setLiveOutput(boolean)} instead.
      */
+    @Deprecated
     public void setShowBuildOutput(final boolean showMavenOutput) {
         setLiveOutput(showMavenOutput);
     }
@@ -138,6 +140,7 @@ public class Maven2Builder extends Builder {
      * @return showMavenOutput true if a BuildOutputLogger will be used to show live output.
      * @deprecated Use {@link #isLiveOutput()} instead.
      */
+    @Deprecated
     boolean getShowBuildOutput() {
         return isLiveOutput();
     }
@@ -216,11 +219,11 @@ public class Maven2Builder extends Builder {
         return buildLogElement;
     }
 
-    private void build(final Map<String, String> buildProperties, final File workingDir, 
-                       final List<String> goalSets, final Element buildLogElement, final Progress progress) 
+    private void build(final Map<String, String> buildProperties, final File workingDir,
+                       final List<String> goalSets, final Element buildLogElement, final Progress progress)
             throws CruiseControlException {
         Attribute saveErrorAttribute = buildLogElement.getAttribute("error");
-        
+
         if (saveErrorAttribute != null) {
             synchronized (buildLogElement) {
                 buildLogElement.removeAttribute(saveErrorAttribute);
@@ -263,7 +266,7 @@ public class Maven2Builder extends Builder {
             }
 
         }
-        
+
         if (saveErrorAttribute != null) {
             synchronized (buildLogElement) {
                 buildLogElement.setAttribute(saveErrorAttribute);

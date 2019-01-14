@@ -1,7 +1,12 @@
 package net.sourceforge.cruisecontrol.util;
 
-import net.sourceforge.cruisecontrol.CruiseControlException;
+import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
+
+import net.sourceforge.cruisecontrol.CruiseControlException;
 
 /**
  * Reusable assertion like facility for handling configuration mistakes (e.g. unsupported/required attributes).
@@ -80,6 +85,19 @@ public final class ValidationHelper {
         }
     }
 
+    public static void assertFalse(boolean condition, String message, final Class plugin)
+        throws CruiseControlException {
+        if (condition) {
+            fail(message + " for plugin " + getShortClassName(plugin));
+        }
+    }
+    public static void assertTrue(boolean condition, String message, final Class plugin)
+        throws CruiseControlException {
+        if (!condition) {
+            fail(message + " for plugin " + getShortClassName(plugin));
+        }
+    }
+
     public static void assertTrue(boolean condition, String message) throws CruiseControlException {
         if (!condition) {
             fail(message);
@@ -121,6 +139,17 @@ public final class ValidationHelper {
         }
     }
 
+    public static void assertNotExists(File file, String attributeName, Class plugin) throws CruiseControlException {
+        if (file == null || attributeName == null || plugin == null) {
+            throw new IllegalArgumentException("All parameters are required.");
+        }
+
+        if (file.exists()) {
+            fail("File specified [" + file.getAbsolutePath() + "] for attribute [" + attributeName + "] on plugin ["
+                    + plugin.getName() + "] must not exist.");
+        }
+    }
+
     public static void assertIsNotDirectory(File file, String attributeName, Class plugin)
             throws CruiseControlException {
         if (file == null || attributeName == null || plugin == null) {
@@ -153,6 +182,27 @@ public final class ValidationHelper {
             }
         } catch (NumberFormatException e) {
             fail(message);
+        }
+    }
+
+    /**
+     * Assertion for encoding string (must be recognised by {@link InputStreamReader} constructor)
+     * @param encoding
+     * @param plugin
+     * @throws CruiseControlException if encoding is invalid
+     */
+    public static void assertEncoding(String encoding, Class plugin)
+            throws CruiseControlException {
+        if (encoding == null || plugin == null) {
+            throw new IllegalArgumentException("All parameters are required.");
+        }
+
+        try {
+            new InputStreamReader(new ByteArrayInputStream(new byte[10]), encoding).close();
+        } catch (UnsupportedEncodingException e) {
+            fail("Encoding " + encoding + " not supported on plugin [" + plugin.getName() + "]", e);
+        } catch (IOException e) {
+            fail("Failed", e);
         }
     }
 }

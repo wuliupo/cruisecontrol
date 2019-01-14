@@ -53,11 +53,11 @@
  *    distribution.
  *
  * 3. The end-user documentation included with the redistribution, if
- *    any, must include the following acknowlegement:
+ *    any, must include the following acknowledgement:
  *       "This product includes software developed by the
  *        Apache Software Foundation (http://www.apache.org/)."
- *    Alternately, this acknowlegement may appear in the software itself,
- *    if and wherever such third-party acknowlegements normally appear.
+ *    Alternately, this acknowledgement may appear in the software itself,
+ *    if and wherever such third-party acknowledgements normally appear.
  *
  * 4. The names "The Jakarta Project", "Ant", and "Apache Software
  *    Foundation" must not be used to endorse or promote products derived
@@ -89,13 +89,15 @@
  */
 package net.sourceforge.cruisecontrol.util;
 
-import net.sourceforge.cruisecontrol.CruiseControlException;
-import org.apache.log4j.Logger;
-
 import java.io.File;
 import java.io.IOException;
+import java.util.Map;
 import java.util.StringTokenizer;
 import java.util.Vector;
+
+import org.apache.log4j.Logger;
+
+import net.sourceforge.cruisecontrol.CruiseControlException;
 
 /**
  * Commandline objects help handling command lines specifying processes to execute.
@@ -125,15 +127,11 @@ public class Commandline implements Cloneable {
 
     private String executable;
     private String[] execEnv;
-
     private File workingDir;
-    private final CruiseRuntime runtime;
-
     private boolean closeStdIn = true; // close it by default to prevent deadlocks (see revision 3143)
 
-    public Commandline(String toProcess, CruiseRuntime cruiseRuntime) {
+    public Commandline(String toProcess) {
         super();
-        this.runtime = cruiseRuntime;
         if (toProcess != null) {
             String[] tmp = new String[0];
             try {
@@ -148,12 +146,6 @@ public class Commandline implements Cloneable {
                 }
             }
         }
-    }
-
-    private boolean safeQuoting = true;
-
-    public Commandline(String toProcess) {
-        this(toProcess, new CruiseRuntime());
     }
 
     public Commandline() {
@@ -372,6 +364,7 @@ public class Commandline implements Cloneable {
         return res;
     }
 
+    @Override
     public String toString() {
         return toString(getCommandline(), true);
     }
@@ -506,13 +499,14 @@ public class Commandline implements Cloneable {
         return getCommandline().length;
     }
 
+    @Override
     public Object clone() throws CloneNotSupportedException {
         super.clone();
 
         final Commandline c = new Commandline();
         c.setExecutable(executable);
         c.addArguments(getArguments());
-        c.useSafeQuoting(safeQuoting);
+        //c.useSafeQuoting(safeQuoting);
 
         return c;
     }
@@ -558,16 +552,6 @@ public class Commandline implements Cloneable {
         } else {
             workingDir = null;
         }
-    }
-
-    /**
-     * Enables and disables safe quoting when executing a command. When enabled: Quotes any arguments that need it when
-     * executing command. This should handle filenames with spaces, but may fall over if the arguments already have
-     * quoting within them. When disabled: Arguments are passed as is.
-     * @param safe if true, use safequoting
-     */
-    public void useSafeQuoting(boolean safe) {
-        safeQuoting = safe;
     }
 
     public void setWorkingDir(Directory directory) throws CruiseControlException {
@@ -623,27 +607,30 @@ public class Commandline implements Cloneable {
      */
     public Process execute() throws IOException {
         final Process process;
+        final ProcessBuilder pbulder = new ProcessBuilder(getCommandline());
+        final Map<String, String> pbenv = pbulder.environment();
 
         final String msgCommandInfo = "Executing: [" + getExecutable() + "] with parameters: ["
-                + toString(getCommandline(), false, "], [") + "]" + "and with "
+                + toString(getArguments(), false, "], [") + "] and with "
                 + (this.execEnv != null ? "customized" : "default") + " environment variables";
 
         if (workingDir == null) {
             LOG.debug(msgCommandInfo);
-            if (safeQuoting) {
-                process = runtime.exec(getCommandline(), this.execEnv);
-            } else {
-                process = runtime.exec(toStringNoQuoting(), this.execEnv);
-            }
-
         } else {
             LOG.debug(msgCommandInfo + " in directory " + workingDir.getAbsolutePath());
-            if (safeQuoting) {
-                process = runtime.exec(getCommandline(), this.execEnv, workingDir);
-            } else {
-                process = runtime.exec(toStringNoQuoting(), this.execEnv, workingDir);
+            pbulder.directory(workingDir);
+        }
+
+        // Clear the original environment and fill new values
+        if (this.execEnv != null) {
+            pbenv.clear();
+            for (final String s : this.execEnv) {
+                final String[] env = s.split("\\s*=\\s*", 2);
+                pbenv.put(env[0], env[1]);
             }
         }
+
+        process = pbulder.start();
 
         if (closeStdIn) {
             process.getOutputStream().close();

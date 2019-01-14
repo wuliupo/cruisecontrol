@@ -155,6 +155,8 @@
             <zipfileset dir="lib/aspirin/v0.8.3" includes="aspirin.jar" prefix="${cc.bin.zip.prefix}/lib"/>
             <zipfileset dir="lib/commons-pool/v1.5.4" includes="commons-pool-1.5.4.jar" prefix="${cc.bin.zip.prefix}/lib"/>
             <zipfileset dir="lib/dnsjava/v2.0.8" includes="dnsjava-2.0.8.jar" prefix="${cc.bin.zip.prefix}/lib"/>
+            <zipfileset dir="lib/xpp3/v1.1.4c" includes="xpp3-1.1.4c.jar" prefix="${cc.bin.zip.prefix}/lib"/>
+            <zipfileset dir="lib/xstream/v1.4.6" includes="xstream-1.4.6.jar" prefix="${cc.bin.zip.prefix}/lib"/>
         </zip>
     </target>
 
@@ -170,6 +172,20 @@
         <!--<get src="http://internap.dl.sourceforge.net/sourceforge/cc-config/cc-config_1.8_build2.zip" dest="${java.io.tmpdir}/cc-config.zip" verbose="on" usetimestamp="true"/>-->
         <get src="http://sourceforge.net/projects/cc-config/files/swing-interface/Version%201.8%20Build%202/cc-config_1.8_build2.zip/download" dest="${java.io.tmpdir}/cc-config.zip" verbose="on" usetimestamp="true"/>
         <unzip src="${java.io.tmpdir}/cc-config.zip" dest="target/cc-config" />
+        <!-- This needs to be removed as soon as the files from ZIP are moved to org.jdom2 -->
+        <echo message="!!!!!!!!!" />
+        <echo message="Converting to org.jdom2. Remove once converted within the zip" />
+        <apply executable="sed" parallel="true">
+            <arg value="-i"/>
+            <arg value="-r"/>
+            <arg value="-e"/>
+            <arg value="s/org[.]jdom[.]/org.jdom2./"/>
+            <arg value="-e"/>
+            <arg value='s/SAXBuilder[(]"[^"]+"[)]/SAXBuilder()/'/>
+            <srcfile/>
+            <fileset dir="target" includes="**/*.java"/>
+        </apply>
+        <!-- ^^^^^^^^^ -->
         <ant antfile="build.xml" target="setup" dir="target/cc-config" inheritAll="false">
             <property name="main.dir" value="../../main" />
         </ant>

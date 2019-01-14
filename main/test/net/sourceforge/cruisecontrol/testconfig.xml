@@ -3,6 +3,10 @@
   <property name='global' value='works!'/>
   <property name='project.global' value='project=${project.name}'/>
 
+  <!-- Check for infinite recursion  properties catch -->
+  <property name='recursive1' value='${recursive2}'/>
+  <property name='recursive2' value='${recursive1}'/>
+
   <plugin name='testnested'
           classname='net.sourceforge.cruisecontrol.listeners.ListenerTestNestedPlugin'
           string='default' otherstring='otherdefault'/>
@@ -10,7 +14,7 @@
   <plugin name='mock.project'
           classname='net.sourceforge.cruisecontrol.MockProjectInterface'>
   </plugin>
-  
+
   <plugin name='project'>
     <property name='x' value='y'/>
     <schedule interval='20' >
@@ -106,7 +110,7 @@
     <property name='simple' value='success!'/>
     <foo name="${simple}" />
   </mock.project>
-  
+
   <mock.project name='simple.global'>
     <foo name="${global}" />  
   </mock.project>
@@ -146,5 +150,127 @@
       <merge dir='${project.name}/target/other-test-reports'/>
     </log>
   </project>
+
+
+  <!-- tests various ways of overriding -->
+  <plugin name='execa' from='exec' command='cA' workingdir='dA'/>
+  <plugin name='execb' from='exec' command='cB' workingdir='dB'/>
+  <plugin name='execc' from='exec' command='cC' workingdir='dC'/>
+  <plugin name='execd' from='exec' command='cD' workingdir='dD'/>
+  <plugin name='exece' from='exec' command='cE' workingdir='dE'/>
+
+  <property name="glob.templ" value="filled_${local}"/>
+
+  <plugin name='inherit' from='project'>
+    <plugin name='exec1' from='exec' inherits='execa' command='cX' />
+    <plugin name='exec2' from='exec' inherits='execb' />
+    <plugin name='exec3' from='exec' command='cZ' />
+
+    <schedule>
+      <exec1/>
+      <exec2/>
+      <exec3/>
+      <exec4/>
+      <exec5/>
+    </schedule>
+
+    <property name="prop1" value="${global}"/>  <!-- filled by global property, but can be redefined -->
+    <property name="prop3" value="${glob.templ}"/> <!-- filled by global property, but with missing item -->
+    <property name="prop2" value="${local}"/> <!-- filled by project-specific property -->
+
+    <plugin name='testlistener' classname='net.sourceforge.cruisecontrol.listeners.ListenerTestPlugin' />
+    <listeners>
+      <testlistener string='${prop1}'/> <!-- Uses property with value resolved later -->
+      <testlistener string='${prop2}'/>
+      <testlistener string='${prop3}'/>
+      <testlistener string='${fitem}'/> <!-- In test.properties file -->
+    </listeners>
+
+    <property file="${test.properties.dir}/${prop2}.properties" />
+  </plugin>
+
+  <inherit name='inherit1'>
+    <!-- At least exec4 and exec5 must be defined -->
+    <plugin name='exec4' from='exec' command='c+' />
+    <plugin name='exec5' from='exec' inherits='exece' command='c*' />
+
+    <property name="prop1"   value="override"/> <!-- must overwrite the value already filled in template -->
+    <property name="local"   value="test"/>
+  </inherit>
+
+  <inherit name='inherit2'>
+    <plugin name='exec4' from='exec' command='c+' />
+    <plugin name='exec5' from='exec' inherits='exece' command='c*' />
+    <plugin name='exec3' from='exec' inherits='exec1' />
+
+    <property file="${test.properties.dir}/test.properties" />
+    <property name="fitem" value="${tempdir}" />
+
+    <!-- Just to prevent "${prop2}.properties file not found" when read in plugin definition -->  
+    <property name="local"   value="empty"/>
+  </inherit>
+
+  <inherit name='inherit3'>
+    <plugin name='exec5' from='exec' inherits='exece' command='c*' />
+    <plugin name='exec4' from='exec' command='c+' />
+    <plugin name='exec1' from='exec' command='foo' />
+
+    <!-- Just to prevent "${prop2}.properties file not found" when read in plugin definition -->  
+    <property name="local"   value="empty"/>
+  </inherit>
+
+
+  <plugin name='mock.custom.prop'
+          classname='net.sourceforge.cruisecontrol.MockCustomProperties'>
+  </plugin>
+
+  <plugin name='mock.project.props1'
+          classname='net.sourceforge.cruisecontrol.MockProjectInterface'>
+    <property file='${test.properties.dir}/test.properties' />
+    <mock.custom.prop text="${mock.prop}"/>    <!-- mock.prop must be defined in a project -->
+    <foo name="${mockkey_${mock.prop}}" />
+  </plugin>
+  <plugin name='mock.project.props2'
+          classname='net.sourceforge.cruisecontrol.MockProjectInterface'>
+    <mock.custom.prop text="${project.name}"/> <!-- defined automatically -->
+    <foo name="${mockkey_${project.name}}" />
+  </plugin>
+
+  <mock.project.props1 name='customprops1' >
+    <property file='${test.properties.dir}/test.properties' />
+    <property name="mock.prop" value="${fitem}"/>
+  </mock.project.props1>
+
+  <mock.project.props2 name='customprops2' >
+  </mock.project.props2>
+
+  <mock.project.props1 name='customprops3' >
+    <property name="mock.prop" value="${tempdir}"/> <!-- will be resolved from file -->
+  </mock.project.props1>
+
+  <mock.project name='customprops4' >
+    <mock.custom.prop text="justval"/>
+    <foo name="${mockkey_justval}" />
+  </mock.project>
+
+
+  <plugin name='mock.project.props3'
+          classname='net.sourceforge.cruisecontrol.MockProjectInterface'>
+    <property name="glob.templ" value="${local}_filled"/>
+    <foo name="${glob.templ}" />
+  </plugin>
+
+  <mock.project.props3 name='customprops5' >
+    <property name="local"   value="local-in-customprops5"/>
+  </mock.project.props3>
+
+  <mock.project.props3 name='customprops6' >
+    <property name="local"   value="local-in-customprops6"/>
+    <property name="glob.templ" value="${local}_filled_${global}"/>
+  </mock.project.props3>
+
+  <mock.project name='settings' >
+    <foo name="${launch.ccname} + ${launch.user}" />
+  </mock.project>
 
 </cruisecontrol>

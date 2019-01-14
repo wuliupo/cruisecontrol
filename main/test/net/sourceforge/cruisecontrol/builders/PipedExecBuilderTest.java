@@ -40,35 +40,31 @@ package net.sourceforge.cruisecontrol.builders;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.regex.Pattern;
-
-import junit.framework.TestCase;
 
 import org.apache.tools.ant.filters.StringInputStream;
-import org.jdom.Attribute;
-import org.jdom.Document;
-import org.jdom.Element;
-import org.jdom.output.Format;
-import org.jdom.output.XMLOutputter;
+import org.jdom2.Attribute;
+import org.jdom2.Document;
+import org.jdom2.Element;
+import org.jdom2.output.Format;
+import org.jdom2.output.XMLOutputter;
 
 import net.sourceforge.cruisecontrol.Builder;
 import net.sourceforge.cruisecontrol.CruiseControlException;
-import net.sourceforge.cruisecontrol.testutil.SysUtilMock;
+import net.sourceforge.cruisecontrol.testutil.TestCase;
 import net.sourceforge.cruisecontrol.testutil.TestUtil.FilesToDelete;
+import net.sourceforge.cruisecontrol.util.IO;
 import net.sourceforge.cruisecontrol.util.StdoutBufferTest;
 
 
@@ -89,23 +85,6 @@ public final class PipedExecBuilderTest extends TestCase {
      *  method ... */
     private FilesToDelete files;
 
-
-    /**
-     * Generates temporary file and stores it into {@link #files} array. The file is deleted
-     * by {@link #tearDown()} method.
-     * The method must be called after {@link #files} attribute is initialized!
-     * @return a new temp file
-     * @throws IOException when the file cannot be created
-     */
-    private File getFile() throws IOException {
-        File file;
-
-        file = File.createTempFile(this.getClass().getName(), ".txt");
-        file.deleteOnExit();
-
-        files.add(file);
-        return file;
-    }
 
     /**
      * Generates text file filled by the given number of lines with random content and store it into
@@ -182,9 +161,10 @@ public final class PipedExecBuilderTest extends TestCase {
     public void testValidate_noID() {
         PipedExecBuilder builder  = new PipedExecBuilder();
 
-        setExec(builder.createExec(), "01", "cat",  "ZERO");
-        setExec(builder.createExec(), null, "cat",   null,   "01"); // corrupted
-        setExec(builder.createExec(), "03", "cat",  ">NULL", "01");
+        //        builder, ID,   script,               pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat(), null, null);
+        addScript(builder, null, new ExecScriptMock.Cat(), null, "01"); // corrupted
+        addScript(builder, "03", new ExecScriptMock.Cat(), null, "01");
 
         /* Must not be validated */
         try {
@@ -193,7 +173,7 @@ public final class PipedExecBuilderTest extends TestCase {
 
         } catch (CruiseControlException e) {
             assertEquals("exception message when the required ID attribute is not set",
-                    "'ID' is required for PipedExecBuilder$Script", e.getMessage());
+                    "'ID' is required for ExecScriptMock$Cat", e.getMessage());
         }
     }
 
@@ -207,9 +187,10 @@ public final class PipedExecBuilderTest extends TestCase {
     public void testValidate_noUniqueID() {
         PipedExecBuilder builder  = new PipedExecBuilder();
 
-        setExec(builder.createExec(), "01", "cat", "ZERO");
-        setExec(builder.createExec(), "02", "cat",  null,   "01");
-        setExec(builder.createExec(), "02", "cat", ">NULL", "01"); // corrupted
+        //        builder, ID,   script,               pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat(), null, null);
+        addScript(builder, "02", new ExecScriptMock.Cat(), "01", null);
+        addScript(builder, "02", new ExecScriptMock.Cat(), "01", null); // corrupted
 
         /* Must not be validated */
         try {
@@ -232,9 +213,10 @@ public final class PipedExecBuilderTest extends TestCase {
     public void testValidate_invalidPipeFrom() {
         PipedExecBuilder builder  = new PipedExecBuilder();
 
-        setExec(builder.createExec(), "01", "cat", "ZERO");
-        setExec(builder.createExec(), "02", "cat",  null,   "xx"); // corrupted
-        setExec(builder.createExec(), "03", "cat", ">NULL", "02");
+        //        builder, ID,   script,                pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat(),  null, null);
+        addScript(builder, "02", new ExecScriptMock.Cat(),  "xx", null); // corrupted
+        addScript(builder, "03", new ExecScriptMock.Cat(),  "02", null);
 
         /* Must not be validated */
         try {
@@ -257,12 +239,13 @@ public final class PipedExecBuilderTest extends TestCase {
     public void testValidate_invalidWaitFor() {
         PipedExecBuilder builder  = new PipedExecBuilder();
 
-        setExec(builder.createExec(), "01", "cat", "ZERO");
-        setExec(builder.createExec(), "02", "cat",  null,   "01");
-        setExec(builder.createExec(), "03", "cat", ">NULL", "02");
+        //        builder, ID,   script,               pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat(), null, null);
+        addScript(builder, "02", new ExecScriptMock.Cat(), "01", null);
+        addScript(builder, "03", new ExecScriptMock.Cat(), "02", null);
         /**/
-        setExec(builder.createExec(), "10", "cat", "ZERO",  null, "xx"); // corrupted
-        setExec(builder.createExec(), "11", "cat", ">NULL", "10");
+        addScript(builder, "10", new ExecScriptMock.Cat(), null, "xx"); // corrupted
+        addScript(builder, "11", new ExecScriptMock.Cat(), "10", null);
 
         /* Must not be validated */
         try {
@@ -284,21 +267,22 @@ public final class PipedExecBuilderTest extends TestCase {
      *            +-<------<------<------<------+
      * </pre>
      */
-    public void testValidate_pipeLoop() throws CruiseControlException {
+    public void testValidate_pipeLoop() {
         PipedExecBuilder builder  = new PipedExecBuilder();
 
-        setExec(builder.createExec(), "01", "cat", "ZERO");
-        setExec(builder.createExec(), "02", "cat",  null,   "01");
-        setExec(builder.createExec(), "03", "cat",  null,   "02");
-        setExec(builder.createExec(), "04", "cat",  null,   "03");
-        setExec(builder.createExec(), "05", "cat", ">NULL", "04");
+        //        builder, ID,   script,               pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat(), null, null);
+        addScript(builder, "02", new ExecScriptMock.Cat(), "01", null);
+        addScript(builder, "03", new ExecScriptMock.Cat(), "02", null);
+        addScript(builder, "04", new ExecScriptMock.Cat(), "03", null);
+        addScript(builder, "05", new ExecScriptMock.Cat(), "04", null);
         /**/
-        setExec(builder.createExec(), "10", "cat", "ZERO",  "20"); // piped from 20
-        setExec(builder.createExec(), "11", "cat",  null,   "10");
-        setExec(builder.createExec(), "12", "cat",  null,   "11");
-        setExec(builder.createExec(), "13", "cat", ">NULL", "12");
+        addScript(builder, "10", new ExecScriptMock.Cat(), "20", null); // piped from 20
+        addScript(builder, "11", new ExecScriptMock.Cat(), "10", null);
+        addScript(builder, "12", new ExecScriptMock.Cat(), "11", null);
+        addScript(builder, "13", new ExecScriptMock.Cat(), "12", null);
         /**/
-        setExec(builder.createExec(), "20", "cat",  null,   "12"); // loop start
+        addScript(builder, "20", new ExecScriptMock.Cat(), "12", null); // loop start
 
         /* Must not be validated */
         try {
@@ -311,9 +295,13 @@ public final class PipedExecBuilderTest extends TestCase {
         }
 
         /* Disable ID 11 to break the loop */
-        disable(builder.createExec(), "11");
+        setDisble(builder, "11");
         /* And validate again. Now it must pass */
-        builder.validate();
+        try {
+            builder.validate();
+        } catch (CruiseControlException e) {
+            fail(e.getMessage());
+        }
     }
 
     /**
@@ -327,19 +315,20 @@ public final class PipedExecBuilderTest extends TestCase {
     public void testValidate_waitLoop() {
         PipedExecBuilder builder  = new PipedExecBuilder();
 
-        setExec(builder.createExec(), "01", "cat", "ZERO");
+        //        builder, ID,   script,               pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat(), null, null);
         // wait for 20 which depends on output of 02
-        setExec(builder.createExec(), "02", "cat",  null,   "01", "20");
-        setExec(builder.createExec(), "03", "cat",  null,   "02");
-        setExec(builder.createExec(), "04", "cat",  null,   "03");
-        setExec(builder.createExec(), "05", "cat", ">NULL", "04");
+        addScript(builder, "02", new ExecScriptMock.Cat(), "01", "20");
+        addScript(builder, "03", new ExecScriptMock.Cat(), "02", null);
+        addScript(builder, "04", new ExecScriptMock.Cat(), "03", null);
+        addScript(builder, "05", new ExecScriptMock.Cat(), "04", null);
         /**/
-        setExec(builder.createExec(), "10", "cat",  null,   "02");
-        setExec(builder.createExec(), "11", "cat",  null,   "10");
-        setExec(builder.createExec(), "12", "cat",  null,   "11");
-        setExec(builder.createExec(), "13", "cat", ">NULL", "12");
+        addScript(builder, "10", new ExecScriptMock.Cat(), "02", null);
+        addScript(builder, "11", new ExecScriptMock.Cat(), "10", null);
+        addScript(builder, "12", new ExecScriptMock.Cat(), "11", null);
+        addScript(builder, "13", new ExecScriptMock.Cat(), "12", null);
         /**/
-        setExec(builder.createExec(), "20", "cat",  null,   "12");
+        addScript(builder, "20", new ExecScriptMock.Cat(), "12", null);
 
         /* Must not be validated */
         try {
@@ -358,23 +347,54 @@ public final class PipedExecBuilderTest extends TestCase {
      *  orig:   01 --> 02 --> 03 -->
      *  repipe: 01 --> 10 --> 11 --> 02 --> 03 -->
      * </pre>
-     * @throws CruiseControlException 
+     * @throws CruiseControlException
      */
     public void testValidate_repipe() throws CruiseControlException {
         PipedExecBuilder builder  = new PipedExecBuilder();
 
-        setExec(builder.createExec(), "01", "cat",      "/dev/zero");
-        setExec(builder.createExec(), "02", "cat",      null,        "01"); 
-        setExec(builder.createExec(), "03", "cat",      null,        "02");
-
+        //        builder, ID,   script,               pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat(), null, null);
+        addScript(builder, "02", new ExecScriptMock.Cat(), "01", null);
+        addScript(builder, "03", new ExecScriptMock.Cat(), "02", null);
         /* add for new pipe */
-        setExec(builder.createExec(), "10", "cat",      null,        "01");
-        setExec(builder.createExec(), "11", "cat",      null,        "10");
+        addScript(builder, "10", new ExecScriptMock.Cat(), "01", null);
+        addScript(builder, "11", new ExecScriptMock.Cat(), "10", null);
+
         /* repipe now - define only ID (again) and pipe */
-        repipe (builder.createExec(), "02",                          "11");
+        setRepipe(builder, "02",                           "11");
 
         /* Must be validated correctly */
         builder.validate();
+    }
+
+    /**
+     * Checks the validation when we wait for a script which is going to be disabled later on
+     * <pre>
+     * </pre>
+     * @throws CruiseControlException
+     */
+    public void testValidate_disable() throws CruiseControlException {
+        PipedExecBuilder builder  = new PipedExecBuilder();
+
+        //        builder, ID,   script,               pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat(), null, null);
+        addScript(builder, "02", new ExecScriptMock.Cat(), "01", null);
+        addScript(builder, "03", new ExecScriptMock.Cat(), "02", null);
+        /* add for new pipe */
+        addScript(builder, "10", new ExecScriptMock.Cat(), "01", null);
+        addScript(builder, "11", new ExecScriptMock.Cat(), "10", "02");
+        addScript(builder, "12", new ExecScriptMock.Cat(), "10", "03");
+
+        /* Disable 02 (will disable 03 as well) */
+        setDisble(builder, "02");
+
+        /* Must be validated correctly (waitfor must be removed) */
+        builder.validate();
+
+        final Collection<String> ids = builder.getKnownIDs();
+
+        assertFalse(ids.contains("02"));
+        assertFalse(ids.contains("03"));
     }
 
     /**
@@ -389,8 +409,8 @@ public final class PipedExecBuilderTest extends TestCase {
      */
     public void testScript_pipe() throws IOException, CruiseControlException {
         PipedExecBuilder builder = new PipedExecBuilder();
-        File inpFile = getFile();
-        File tmpFile = getFile();
+        File inpFile = files.add(this);
+        File tmpFile = files.add(this);
 
         /* Create the content */
         createFiles(inpFile, tmpFile, 200);
@@ -399,36 +419,40 @@ public final class PipedExecBuilderTest extends TestCase {
         InputStream cat1 = new BufferedInputStream(new FileInputStream(inpFile));
 
         /* Second cat - real command without arguments */
-        PipedExecBuilder.Script cat2 = (PipedExecBuilder.Script) builder.createExec();
-        setExec(cat2, "02", "cat", null);
+        PipedScript cat2 = new ExecScriptMock.Cat();
+        builder.add(cat2);
+        cat2.setID("2");
+        cat2.setPipeFrom("1"); // must be set for cat2.setInputProvider() call
         cat2.initialize();
-        cat2.setStdinProvider(cat1);
+        cat2.setInputProvider(cat1, "1");
         cat2.setBuildProperties(new HashMap<String, String>());
         cat2.setBuildLogParent(new Element("build"));
-        cat2.setBinaryStdout(false);
+        cat2.setBinaryOutput(false);
         cat2.setGZipStdout(false);
         /* Validate and run (not as thread here) */
         cat2.validate();
         cat2.run();
 
         /* Test the output - it must be the same as the input */
-        assertStreams(new FileInputStream(inpFile), cat2.getStdOutReader());
+        assertStreams(new FileInputStream(inpFile), cat2.getOutputReader());
 
         /* Third cat - real command without arguments */
-        PipedExecBuilder.Script cat3 = (PipedExecBuilder.Script) builder.createExec();
-        setExec(cat3, "03", "cat", null);
+        PipedScript cat3 = new ExecScriptMock.Cat();
+        builder.add(cat3);
+        cat3.setID("3");
+        cat3.setPipeFrom("2"); // must be set for cat3.setInputProvider() call
         cat3.initialize();
-        cat3.setStdinProvider(cat2.getStdOutReader());
+        cat3.setInputProvider(cat2.getOutputReader(), "2");
         cat3.setBuildProperties(new HashMap<String, String>());
         cat3.setBuildLogParent(new Element("build"));
-        cat3.setBinaryStdout(false);
+        cat3.setBinaryOutput(false);
         cat3.setGZipStdout(false);
         /* Validate and run (not as thread here) */
         cat3.validate();
         cat3.run();
 
         /* Test the output - it must be the same as the input */
-        assertStreams(new FileInputStream(inpFile), cat3.getStdOutReader());
+        assertStreams(new FileInputStream(inpFile), cat3.getOutputReader());
     }
 
     /**
@@ -452,54 +476,54 @@ public final class PipedExecBuilderTest extends TestCase {
         Element buildLog;
 
         /* Input and result files */
-        File inp1File = getFile();
-        File inp2File = getFile();
-        File res1File = getFile();
-        File res2File = getFile();
+        File inp1File = files.add(this);
+        File inp2File = files.add(this);
+        File res1File = files.add(this);
+        File res2File = files.add(this);
         /* Prepare content */
         createFiles(inp1File, res1File, 50);
         createFiles(inp2File, res2File, 110);
 
         /* Temporary and output files */
-        File tmp1File = getFile();
-        File tmp2File = getFile();
-        File out1File = getFile();
-        File out2File = getFile();
-        File out3File = getFile();
-        File out4File = getFile();
+        File tmp1File = files.add(this);
+        File tmp2File = files.add(this);
+        File out1File = files.add(this);
+        File out2File = files.add(this);
+        File out3File = files.add(this);
+        File out4File = files.add(this);
 
 
         /* Fill it by commands to run*/
         builder.setShowProgress(false);
         builder.setTimeout(180);
-        /* Set commands */
-        setExec(builder.createExec(), "01", "cat",      tmp2File.getAbsolutePath(),        null, "37");
-        setExec(builder.createExec(), "02", "sort",     null,                              "01");
-        setExec(builder.createExec(), "03", "uniq",     null,                              "02");
-        setExec(builder.createExec(), "04", "cat",  ">"+out4File.getAbsolutePath(),        "03");
+        //        builder, ID,   script,                                                     pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat("<"+tmp2File.getAbsolutePath()),         null, "37");
+        addScript(builder, "02", new ExecScriptMock.Sort(),                                      "01", null);
+        addScript(builder, "03", new ExecScriptMock.Uniq(),                                      "02", null);
+        addScript(builder, "04", new ExecScriptMock.Cat(">"+out4File.getAbsolutePath()),         "03", null);
         /**/
-        setExec(builder.createExec(), "11", "cat",      inp2File.getAbsolutePath());
-        setExec(builder.createExec(), "12", "cat",      tmp1File.getAbsolutePath() + " -", "11", "35");
-        setExec(builder.createExec(), "13", "shuf",     null,                              "12");
-        setExec(builder.createExec(), "14", "grep",     "'^\\s*([0-9]+\\s+){3}'",          "13");
-        setExec(builder.createExec(), "15", "del",      null,                              "14");
-        setExec(builder.createExec(), "16", "sort",     null,                              "15");
-        setExec(builder.createExec(), "17", "uniq",     null,                              "16");
-        setExec(builder.createExec(), "18", "grep",     "-v '^\\s*([0-9]+\\s+){3}'",       "13");
-        setExec(builder.createExec(), "19", "sort",     "-u",                              "18");
-        setExec(builder.createExec(), "20", "cat",  ">"+out2File.getAbsolutePath(),        "19");
-        setExec(builder.createExec(), "21", "cat",  ">"+out3File.getAbsolutePath(),        "17");
+        addScript(builder, "11", new ExecScriptMock.Cat("<"+inp2File.getAbsolutePath()),         null, null);
+        addScript(builder, "12", new ExecScriptMock.Cat("<"+tmp1File.getAbsolutePath() + " <-"), "11", "35");
+        addScript(builder, "13", new ExecScriptMock.Shuf(),                                      "12", null);
+        addScript(builder, "14", new ExecScriptMock.Grep("^\\s*([0-9]+\\s+){3}"),                "13", null);
+        addScript(builder, "15", new ExecScriptMock.Del(),                                       "14", null);
+        addScript(builder, "16", new ExecScriptMock.Sort(),                                      "15", null);
+        addScript(builder, "17", new ExecScriptMock.Uniq(),                                      "16", null);
+        addScript(builder, "18", new ExecScriptMock.Grep("^\\s*([0-9]+\\s+){3}", false),         "13", null);
+        addScript(builder, "19", new ExecScriptMock.Sort(true),                                  "18", null);
+        addScript(builder, "20", new ExecScriptMock.Cat(">"+out2File.getAbsolutePath()),         "19", null);
+        addScript(builder, "21", new ExecScriptMock.Cat(">"+out3File.getAbsolutePath()),         "17", null);
         /**/
-        setExec(builder.createExec(), "31", "cat",      inp1File.getAbsolutePath());
-        setExec(builder.createExec(), "32", "cat",      null,                              "31");
-        setExec(builder.createExec(), "33", "add",      null,                              "32");
-        setExec(builder.createExec(), "34", "shuf",     null,                              "33");
-        setExec(builder.createExec(), "35", "cat",  ">"+tmp1File.getAbsolutePath(),        "33");
-        setExec(builder.createExec(), "36", "del",      null,                              "34");
-        setExec(builder.createExec(), "37", "cat",  ">"+tmp2File.getAbsolutePath(),        "36");
-        setExec(builder.createExec(), "38", "sort",     null,                              "36");
-        setExec(builder.createExec(), "39", "uniq",     null,                              "38");
-        setExec(builder.createExec(), "40", "cat",  ">"+out1File.getAbsolutePath(),        "39");
+        addScript(builder, "31", new ExecScriptMock.Cat("<"+inp1File.getAbsolutePath()),         null, null);
+        addScript(builder, "32", new ExecScriptMock.Cat(),                                       "31", null);
+        addScript(builder, "33", new ExecScriptMock.Add(),                                       "32", null);
+        addScript(builder, "34", new ExecScriptMock.Shuf(),                                      "33", null);
+        addScript(builder, "35", new ExecScriptMock.Cat(">"+tmp1File.getAbsolutePath()),         "33", null);
+        addScript(builder, "36", new ExecScriptMock.Del(),                                       "34", null);
+        addScript(builder, "37", new ExecScriptMock.Cat(">"+tmp2File.getAbsolutePath()),         "36", null);
+        addScript(builder, "38", new ExecScriptMock.Sort(),                                      "36", null);
+        addScript(builder, "39", new ExecScriptMock.Uniq(),                                      "38", null);
+        addScript(builder, "40", new ExecScriptMock.Cat(">"+out1File.getAbsolutePath()),         "39", null);
 
         /* Validate it and run it */
         builder.validate();
@@ -525,7 +549,169 @@ public final class PipedExecBuilderTest extends TestCase {
         assertFiles(res1File, out3File);
         assertFiles(res1File, out4File);
         assertFiles(res2File, out2File);
+    }
 
+    /**
+     * Tests the repining the validation when an already existing script is re-piped
+     * <pre>
+     *             +-> 04 ---------------- +
+     *  orig:   01 --> 02 --> 03(sort) --> 0A(file)
+     *             +---------------------- +
+     * </pre>
+     * @throws IOException
+     * @throws CruiseControlException
+     */
+    public void testBuild_multiPipe() throws IOException, CruiseControlException {
+        final PipedExecBuilder builder  = new PipedExecBuilder();
+
+        /* Input file (in UTF8 encoding), and output files */
+        final File inpFile = files.add(this);
+        final File tmpFile = files.add(this);
+        final File ouAFile = files.add(this);
+
+        /* Create the content */
+        createFiles(inpFile, ouAFile, 50);
+
+        /* Make expected output */
+        final StringBuffer tmpOut = new StringBuffer(4096);
+        tmpOut.append(IO.readText(new FileInputStream(inpFile)));
+        tmpOut.append(IO.readText(new FileInputStream(ouAFile)));
+        tmpOut.append(IO.readText(new FileInputStream(inpFile)));
+
+        builder.setTimeout(10);
+        builder.setShowProgress(false);
+
+        //        builder, ID,   script,                                            pipeFrom,       waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat("<"+inpFile.getAbsolutePath()), null,       null);
+        addScript(builder, "02", new ExecScriptMock.Cat(10), /* slow */                 "01",       null);
+        addScript(builder, "03", new ExecScriptMock.Sort(true),                         "02",       null);
+        addScript(builder, "04", new ExecScriptMock.Cat(),                              "01",       "01");
+        addScript(builder, "0A", new ExecScriptMock.Cat("-04 -03 -01 "
+                                                      + ">"+ouAFile.getAbsolutePath()), "01,03,04", null);
+        /* Validate it and run it */
+        builder.validate();
+        builder.build(new HashMap<String, String>(), null);
+
+        /* Check */
+        assertStreams(new StringInputStream(tmpOut.toString()), new FileInputStream(ouAFile));
+    }
+
+    /**
+     * Tests the repining the validation when an already existing script is re-piped
+     * <pre>
+     *                           +-> 06(file)
+     *  orig:   01 --> 02 --> 03 +-> 04 --> 05(file)
+     *
+     *  repipe: 01 --> 10 --> 11 --> 12 --> 13 +-> 04 --> 05(file)
+     *                                         +-> SO(file)
+     * </pre>
+     * @throws IOException
+     * @throws CruiseControlException
+     */
+    public void testBuild_repipe() throws IOException, CruiseControlException {
+        PipedExecBuilder builder  = new PipedExecBuilder();
+
+        /* Input file (in UTF8 encoding), and output files */
+        File inpFile = files.add(this);
+        File ou1File = files.add(this);
+        File ou2File = files.add(this);
+        File ou3File = files.add(this);
+        File tmpFile = files.add(this);
+
+        /* Out 3 must not exist */
+        ou3File.delete();
+        assertFalse(ou3File.exists());
+
+        /* Create the content */
+        createFiles(inpFile, tmpFile, 200);
+
+        /* Set 2 minutes long timeout. */
+        builder.setTimeout(120);
+        builder.setShowProgress(false);
+
+        //        builder, ID,   script,                                            pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat("<"+inpFile.getAbsolutePath()), null, null);
+        addScript(builder, "02", new ExecScriptMock.Add(),                              "01", null);
+        addScript(builder, "03", new ExecScriptMock.Shuf(),                             "02", null);
+        addScript(builder, "04", new ExecScriptMock.Cat(),                              "03", null);
+        addScript(builder, "05", new ExecScriptMock.Cat(">"+ou1File.getAbsolutePath()), "04", null);
+        addScript(builder, "06", new ExecScriptMock.Cat(">"+ou3File.getAbsolutePath()), "03", null);
+        addScript(builder, "X1", new ExecScriptMock.Cat(),                              "04", null);
+
+        /* Now define the repipe */
+        addScript(builder, "10", new ExecScriptMock.Shuf(),                             "01", null);
+        addScript(builder, "11", new ExecScriptMock.Cat(),                              "10", null);
+        addScript(builder, "12", new ExecScriptMock.Cat(),                              "11", null);
+        addScript(builder, "13", new ExecScriptMock.Sort(true),                         "12", null);
+        addScript(builder, "S1", new ExecScriptMock.Sort(true),                         "01", null);
+        addScript(builder, "S2", new ExecScriptMock.Cat(">"+ou2File.getAbsolutePath()), "S1", null);
+
+        /* Repipe here 04 from 13 (instead of 03)*/
+        setRepipe(builder, "04", "13");
+        /* And disable the old path */
+        setDisble(builder, "02");
+
+        /* Validate it and run it */
+        builder.validate();
+        builder.build(new HashMap<String, String>(), null);
+
+        /* Check to the sorted variant (the first pile does not sort at all) */
+        assertFiles(tmpFile, ou1File);
+        assertFiles(tmpFile, ou2File);
+        /* out3 file must not exist (since disabled, the path must not be invoked) */
+        assertFalse(ou3File.exists());
+    }
+
+    /**
+     * Tests the repining the validation when an already existing script is re-piped
+     * <pre>
+     *                     +------------------------+
+     *             +-> 04(file)                     |
+     *  orig:   01 --> 02 --> 03(file)    0A(file)  0B(file)
+     *                            +-------+---------+
+     * </pre>
+     * @throws IOException
+     * @throws CruiseControlException
+     */
+    public void testBuild_wait() throws IOException, CruiseControlException {
+        final PipedExecBuilder builder  = new PipedExecBuilder();
+
+        /* Input file (in UTF8 encoding), and output files */
+        final File inpFile = files.add(this);
+        final File ou3File = files.add(this);
+        final File ou4File = files.add(this);
+        final File ouAFile = files.add(this);
+        final File ouBFile = files.add(this);
+
+        /* Create the content */
+        createFiles(inpFile, ouBFile, 200);
+
+        builder.setTimeout(12);
+        builder.setShowProgress(false);
+
+        //        builder, ID,   script,                                            pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat("<"+inpFile.getAbsolutePath()), null, null);
+        addScript(builder, "02", new ExecScriptMock.Cat(10), /* slow */                 "01", null);
+        addScript(builder, "03", new ExecScriptMock.Cat(">"+ou3File.getAbsolutePath()), "02", null);
+        addScript(builder, "04", new ExecScriptMock.Cat(">"+ou4File.getAbsolutePath()), "01", null);
+        addScript(builder, "0A", new ExecScriptMock.Cat("<"+ou3File.getAbsolutePath() + " "
+                                                      + "- "
+                                                      + ">"+ouAFile.getAbsolutePath()), null, "03");
+        addScript(builder, "0B", new ExecScriptMock.Cat("<"+ou3File.getAbsolutePath() + " "
+                                                      + "<"+ou4File.getAbsolutePath() + " "
+                                                      + ">"+ouBFile.getAbsolutePath()), null, "03,04");
+        /* Validate it and run it */
+        builder.validate();
+        builder.build(new HashMap<String, String>(), null);
+
+        /* Make tmp file */
+        final StringBuffer tmpOut = new StringBuffer(2048);
+        tmpOut.append(IO.readText(new FileInputStream(inpFile)));
+        tmpOut.append(IO.readText(new FileInputStream(inpFile)));
+
+        /* Check to the sorted variant (the first pile does not sort at all) */
+        assertFiles(inpFile, ouAFile);
+        assertStreams(new StringInputStream(tmpOut.toString()), new FileInputStream(ouBFile));
     }
 
     /**
@@ -538,38 +724,35 @@ public final class PipedExecBuilderTest extends TestCase {
      * @throws IOException if the test fails!
      * @throws CruiseControlException if the builder fails!
      */
-    public void testBuild_badCommand() throws IOException, CruiseControlException {
-        PipedExecBuilder builder  = new PipedExecBuilder();
-        Element buildLog;
-        Attribute error;
+    public void testExec_badCommand() throws IOException, CruiseControlException {
+        final PipedExecBuilder builder  = new PipedExecBuilder();
+        final PipedExecScript badScript = new PipedExecScript();
 
-        /* Fill it by commands to run */
-        builder.setShowProgress(false);
-        builder.setTimeout(300000);
+        /* Fill script with valid arguments but with non-existing command */
+        badScript.setTimeout(300000);
+        badScript.setCommand("BAD");  /* Such binary should not exist on most of the platforms */
 
         /* Output and "somewhere-in-the middle" temporary file, input and corresponding result
          * files */
-        File out1File = getFile();
-        File tmp1File = getFile();
-        File inp1File = getFile();
-        File res1File = getFile();
+        File out1File = files.add(this);
+        File inp1File = files.add(this);
+        File res1File = files.add(this);
         /* Prepare content */
         createFiles(inp1File, res1File, 50);
 
-
-        /* Set commands */
-        setExec(builder.createExec(), "01", "cat",      inp1File.getAbsolutePath());
-        setExec(builder.createExec(), "02", "shuf",                                 "01");
-        /* corrupted: bad binary name */
-        setExec(builder.createExec(), "03", "BAD",      tmp1File.getAbsolutePath(), "02");
-        setExec(builder.createExec(), "04", "sort", "-u",                           "02");
-        setExec(builder.createExec(), "05", "cat",  ">"+out1File.getAbsolutePath(), "04");
+        //        builder, ID,   script,                                             pipeFrom, waitFor
+        addScript(builder, "01", new ExecScriptMock.Cat("<"+inp1File.getAbsolutePath()), null, null);
+        addScript(builder, "02", new ExecScriptMock.Shuf(),                              "01", null);
+        addScript(builder, "03", badScript,                                              "02", null); /* corrupted: bad binary name */
+        addScript(builder, "04", new ExecScriptMock.Sort(true),                          "02", null);
+        addScript(builder, "05", new ExecScriptMock.Cat(">"+out1File.getAbsolutePath()), "04", null);
 
 
         /* Validate it and run it */
         builder.validate();
-        buildLog = builder.build(new HashMap<String, String>(), null);
-        error    = buildLog.getAttribute("error");
+        /* And run */
+        final Element buildLog = builder.build(new HashMap<String, String>(), null);
+        final Attribute error  = buildLog.getAttribute("error");
 
         printXML(buildLog);
         /* 'error' attribute must exist in the build log */
@@ -577,52 +760,74 @@ public final class PipedExecBuilderTest extends TestCase {
         assertRegex("unexpected error message is returned", "(exec error.*|return code .*)", error.getValue());
     }
 
-
     /**
-     * Checks the function of the whole builder when an option of a command is invalid. The pipe
-     * looks like:
-     * <pre>
-     *  01 +-> 02(bad option)
-     *     +-> 03
-     * </pre>
-     *
-     * @throws IOException if the test fails!
-     * @throws CruiseControlException if the builder fails!
+     * Checks if the PipedExecBuilder.Script cannot be fed by multiple streams
      */
-    public void testBuild_badOption() throws IOException, CruiseControlException {
-        PipedExecBuilder builder  = new PipedExecBuilder();
-        Element buildLog;
-        Attribute error;
+    public void testExec_oneScriptPipe() {
+        final PipedExecBuilder builder = new PipedExecBuilder();
+        final PipedExecScript script = builder.createExec();
 
-        /* Output file, input and corresponding result files */
-        File out1File = getFile();
-        File inp1File = getFile();
-        File res1File = getFile();
-        /* Prepare content */
-        createFiles(inp1File, res1File, 50);
+        /* Fill script with valid arguments but with non-existing command */
+        script.setCommand("echo");  /* The command does not matter */
+        script.setID("one");
+        script.setPipeFrom("01,02");
 
-        /* Fill it by commands to run. */
-        builder.setShowProgress(false);
-        builder.setTimeout(180);
-
-        /* Set commands */
-        setExec(builder.createExec(), "01", "cat",      inp1File.getAbsolutePath());
-        /* corrupted: unknown option */
-        setExec(builder.createExec(), "02", "cat", ">/////",                       "01");
-        setExec(builder.createExec(), "03", "cat", ">"+out1File.getAbsolutePath(), "01"); // OK
-
-
-        /* Validate it and run it */
-        builder.validate();
-        buildLog = builder.build(new HashMap<String, String>(), null);
-        error    = buildLog.getAttribute("error");
-
-        printXML(buildLog);
-        /* 'error' attribute must exist in the build log */
-        assertNotNull("error attribute was not found in build log!", error);
-        assertRegex("unexpected error message is returned", "return code .*", error.getValue());
+        /* Validate it */
+        try {
+            script.validate();
+            fail("Script cannot pass validation when piped from multiple streams");
+        }
+        catch (CruiseControlException e) {
+            assertEquals("ID one: only single piped script is allowed for plugin PipedExecScript", e.getMessage());
+        }
     }
 
+    /**
+     * Test environment variables in the build - sets some value PipedExecBuilder and check
+     * if it is propagated to the individual builders
+     *
+     * @throws CruiseControlException
+     * @throws IOException
+     */
+    public void testExec_setEnvVal() throws IOException, CruiseControlException {
+        PipedExecBuilder builder  = new PipedExecBuilder();
+        Builder.EnvConf env;
+        String envvar = "TESTENV";
+        String envval = "dummy_value";
+
+        File envExec = files.add("PipedExecBuilderTest.internalEnvTest", "_outputenv.bat");
+        File outFile = files.add(this);
+
+        builder.setTimeout(10);
+        builder.setShowProgress(false);
+
+
+        // Create script printing the env variables to stdout. It must be external script (we use the same
+        // as used in ExecBuilderTest), and we must use PipedExecBuilder.createExec() to create the script
+        // with env setting linked. This must be solved in a better way ...
+        final ExecBuilder envGetter = ExecBuilderTest.createEnvExec(envExec);
+        final PipedExecScript script = builder.createExec();
+        script.setCommand(envGetter.getCommand());
+        script.setArgs(envGetter.getArgs());
+        script.setID("env");
+        // Use the "other" scripts to get the env variables to the file
+        //        builder, ID,   script,           pipeFrom, waitFor
+        addScript(builder, "get", new ExecScriptMock.Grep("^"+envvar+".*"),              "env", null);
+        addScript(builder, "out", new ExecScriptMock.Cat(">"+outFile.getAbsolutePath()), "get", null);
+
+        // set env
+        env = builder.createEnv();
+        env.setName(envvar);
+        env.setValue(envval);
+        // Validate it and run it
+        builder.validate();
+        final Element buildLog = builder.build(new HashMap<String, String>(), null);
+
+        // 'error' attribute must not exist in the build log
+        assertNull("error attribute was found in build log!", buildLog.getAttribute("error"));
+        // And the TESTENV=dummy_value must be in the filtered output
+        assertStreams(new StringInputStream(envvar+"="+envval), new FileInputStream(outFile));
+    } // testBuild_NewEnvVar
 
     /**
      * Checks the timeout function. The pipe looks like:
@@ -633,389 +838,104 @@ public final class PipedExecBuilderTest extends TestCase {
      * @throws IOException if the test fails!
      * @throws CruiseControlException if the builder fails!
      */
-    public void testBuild_timeout() throws CruiseControlException, IOException {
+    public void testExec_timeout() throws CruiseControlException, IOException {
 
         PipedExecBuilder builder = new PipedExecBuilder();
         Element buildLog;
         Attribute error;
 
         /* Output files, input and corresponding result files */
-        File out1File = getFile();
-        File out2File = getFile();
-        File inp1File = getFile();
-        File res1File = getFile();
-        /* Prepare content */
-        createFiles(inp1File, res1File, 50);
+        File infScript = files.add("PipedExecBuilderTest.internalTimeoutTest", "_sleep.bat");
+
+        // Create command running 10secs
+        // Create script running 10sec. It must be external script (we use the same
+        // as used in ExecBuilderTest), and we copy its parameters to the script build by
+        // PipedExecBuilder.createExec()
+        final ExecBuilder infExec = ExecBuilderTest.createSleepExec(infScript, 10);
+        final PipedExecScript script = builder.createExec();
+        script.setCommand(infExec.getCommand());
+        script.setArgs(infExec.getArgs());
+        script.setID("01");
+        // Create other "scripts" to a pipe
+        //        builder, ID,   script,                pipeFrom, waitFor
+        addScript(builder, "02", new ExecScriptMock.Sort(), "01", null);
+        addScript(builder, "03", new ExecScriptMock.Cat(),  "02", null);
 
         /* Fill it by commands to run. */
-        builder.setTimeout(10);
+        builder.setTimeout(2);
         builder.setShowProgress(false);
-
-        /* Read from infinite file (with some waiting not to read large amoutn of data ...
-         * Option also is to read from STDIN, but not to have the command piped from
-         * another command; however, it is not going to be worked, as STDIN of the command is
-         * closed as soon as nothing can be read from. See also #testBuild_stdinClose() */
-        setExec(builder.createExec(), "01", "cat",  "-D 1000 ZERO");
-        setExec(builder.createExec(), "02", "sort", "-u",                           "01");
-        setExec(builder.createExec(), "03", "cat",  ">"+out2File.getAbsolutePath(), "02");
-
         /* Validate it and run it */
         builder.validate();
         buildLog = builder.build(new HashMap<String, String>(), null);
         error    = buildLog.getAttribute("error");
 
         printXML(buildLog);
-        /* And finally compare the files */
-        assertFiles(out1File, out1File);
         /* 'error' attribute must exist in the build log, ant it must hold 'timeout' string */
         assertNotNull("error attribute was not found in build log!", error);
         assertRegex("unexpected error message is returned", "build timeout.*", error.getValue());
     }
 
-    /**
-     * Checks if the STDIN of a command is closed when it is not piped from another command.
-     * When STDIO is not closed <code>cat</code> command should wait for infinite time.
-     * The pipe looks like:
-     * <pre>
-     *  01(no input) --> 02 --> 03
-     * </pre>
-     *
-     * @throws IOException if the test fails!
-     * @throws CruiseControlException if the builder fails!
-     */
-    public void testBuild_stdinClose() throws CruiseControlException, IOException {
 
-        PipedExecBuilder builder = new PipedExecBuilder();
-        Element buildLog;
-        long startTime = System.currentTimeMillis();
-
-        /* Set 2 minutes long timeout. */
-        builder.setTimeout(120);
-        builder.setShowProgress(false);
-
-        /* Read from stdin, but do not have it piped. The command must end immediately
-         * without error, as the stdin MUST BE closed when determined that nothing can be
-         * read from */
-        setExec(builder.createExec(), "01", "cat",     null);
-        setExec(builder.createExec(), "02", "cat", ">"+getFile().getAbsolutePath(), "01");
-
-        /* Validate it and run it */
-        builder.validate();
-        buildLog = builder.build(new HashMap<String, String>(), null);
-
-        printXML(buildLog);
-        /* First of all, the command must not run. 20 seconds must be far enough! */
-        assertTrue("command run far longer than it should!", (System.currentTimeMillis() - startTime) / 1000 < 20);
-        /* No 'error' attribute must exist in the build log */
-        assertNull("error attribute was found in build log!", buildLog.getAttribute("error"));
-    }
-
-    /**
-     * Tests the repining the validation when an already existing script is re-piped
-     * <pre>
-     *                           +-> 06(file)
-     *  orig:   01 --> 02 --> 03 +-> 04 --> 05(file)
-     *  
-     *  repipe: 01 --> 10 --> 11 --> 12 --> 13 +-> 04 --> 05(file)
-     *                                         +-> SO(file)
-     * </pre>
-     * @throws IOException 
-     * @throws CruiseControlException 
-     */
-    public void testBuild_repipe() throws IOException, CruiseControlException {
-        PipedExecBuilder builder  = new PipedExecBuilder();
-
-        /* Input file (in UTF8 encoding), and output files */
-        File inpFile = getFile();
-        File ou1File = getFile();
-        File ou2File = getFile();
-        File ou3File = getFile();
-        File tmpFile = getFile();
-
-        /* Create the content */
-        createFiles(inpFile, tmpFile, 200);
-
-        /* Set 2 minutes long timeout. */
-        builder.setTimeout(120);
-        builder.setShowProgress(false);
-
-        /* Read text from file in utf8 and try to pass it through various encodings */
-        setExec(builder.createExec(), "01", "cat",  inpFile.getAbsolutePath());
-        setExec(builder.createExec(), "02", "add",  null,                          "01");
-        setExec(builder.createExec(), "03", "del",  null,                          "02");
-        setExec(builder.createExec(), "04", "cat",  null,                          "03");
-        setExec(builder.createExec(), "05", "cat",  ">"+ou1File.getAbsolutePath(), "04");
-        setExec(builder.createExec(), "06", "cat",  ">"+ou3File.getAbsolutePath(), "03");
-
-        /* Now define the repipe */
-        setExec(builder.createExec(), "10", "shuf", null,                          "01");
-        setExec(builder.createExec(), "11", "cat",  null,                          "10");
-        setExec(builder.createExec(), "12", "cat",  null,                          "11");
-        setExec(builder.createExec(), "13", "sort", "-u",                          "12");
-        setExec(builder.createExec(), "S1", "sort", "-u",                          "01");
-        setExec(builder.createExec(), "S2", "cat",  ">"+ou2File.getAbsolutePath(), "S1");
-        /* repipe here */
-        repipe (builder.createExec(), "04",                                        "13");
-        /* and disable the old path */
-        disable(builder.createExec(), "02");
-
-        /* Validate it and run it */
-        builder.validate();
-        builder.build(new HashMap<String, String>(), null);
-
-        /* Check to the sorted variant (the first pile does not sort at all) */
-        assertFiles(tmpFile, ou1File);
-        assertFiles(tmpFile, ou2File);
-    }
-
-    
-    /**
-     * Test environment variables in the build - sets some value PipedExecBuilder and check
-     * if it is propagated to the individual builders
-     * 
-     * @throws CruiseControlException 
-     * @throws IOException 
-     */
-    public void testBuild_SetEnvVal() throws IOException, CruiseControlException {
-        PipedExecBuilder builder  = new PipedExecBuilder();
-        PipedExecBuilder.Script script;
-        Builder.EnvConf env;
-        String envvar = "TESTENV";
-        String envval = "dummy_value";
-        
-        File envExec = ExecBuilderTest.createEnvTestScript();
-        File outFile = getFile();
-
-        builder.setTimeout(10);
-        builder.setShowProgress(false);
-
-        // set env
-        env = builder.createEnv();
-        env.setName(envvar);
-        env.setValue(envval);
-        // print env and store it to the file
-        // Must be configured in a "more difficult" way, since SysUtilMock which does not 
-        // contain 'env' command
-        script = (PipedExecBuilder.Script) builder.createExec();
-        script.setID("env");
-        script.setCommand(envExec.getAbsolutePath());
-        //
-        setExec(builder.createExec(), "get", "grep", "^"+envvar+".*",               "env");
-        setExec(builder.createExec(), "out", "cat",  ">"+outFile.getAbsolutePath(), "get");
-        
-        // Validate it and run it
-        builder.validate();
-        builder.build(new HashMap<String, String>(), null);
-        
-        // Test the filtered output. We expects the ENV variable in form TESTENV=dummy_value
-        // which seems to be the same on both Linux and Windows. If is is not valid, i.e. the
-        // system the test is running on prints the ENV variables formated in a different way,
-        // the test must checks the result in a more clever way. For example, SysUtilMock
-        // class can be extended by command printing ENV variables
-        assertStreams(new StringInputStream(envvar+"="+envval), new FileInputStream(outFile));
-    } // testBuild_NewEnvVar
-    
-    
-    /**
-     * Method filling the {@link PipedExecBuilder.Script} class no piped from another scripts,
-     * without working dir and not waiting for another script - {@link PipedExecBuilder.Script#setPipeFrom(String)},
-     * {@link PipedExecBuilder.Script#setWaitFor(String)} and
-     * {@link PipedExecBuilder.Script#setWorkingDir(String)} are not called.
-     *
-     * @param exec the instance to fill, <b>must not</b> be <code>null</code>.
-     * @param id {@link PipedExecBuilder.Script#setID(String)}, may be <code>null</code>
-     * @param command {@link PipedExecBuilder.Script#setCommand(String)}, may be <code>null</code>
-     *        Note that the command must be supported by {@link SysUtilMock} class!
-     * @param args {@link PipedExecBuilder.Script#setArgs(String)}, may be <code>null</code>
-     */
-    private static void setExec(Object exec, String id, String command, String args) {
-        setExec(exec, id, command, args, null, null, null);
-    }
-    /**
-     * Method filling the {@link PipedExecBuilder.Script} class without working dir and not
-     * waiting for another script - {@link PipedExecBuilder.Script#setWaitFor(String)} and
-     * {@link PipedExecBuilder.Script#setWorkingDir(String)} are not called.
-     *
-     * @param exec the instance to fill, <b>must not</b> be <code>null</code>.
-     * @param id {@link PipedExecBuilder.Script#setID(String)}, may be <code>null</code>
-     * @param command {@link PipedExecBuilder.Script#setCommand(String)}, may be <code>null</code>
-     *        Note that the command must be supported by {@link SysUtilMock} class!
-     * @param args {@link PipedExecBuilder.Script#setArgs(String)}, may be <code>null</code>
-     * @param pipeFrom {@link PipedExecBuilder.Script#setPipeFrom(String)}, may be <code>null</code>
-     */
-    private static void setExec(Object exec, String id, String command, String args, String pipeFrom) {
-        setExec(exec, id, command, args, pipeFrom, null, null);
-    }
-    /**
-     * Method filling the {@link PipedExecBuilder.Script} class without working dirset -
-     * {@link PipedExecBuilder.Script#setWorkingDir(String)} is not called.
-     *
-     * @param exec the instance to fill, <b>must not</b> be <code>null</code>.
-     * @param id {@link PipedExecBuilder.Script#setID(String)}, may be <code>null</code>
-     * @param command {@link PipedExecBuilder.Script#setCommand(String)}, may be <code>null</code>
-     *        Note that the command must be supported by {@link SysUtilMock} class!
-     * @param args {@link PipedExecBuilder.Script#setArgs(String)}, may be <code>null</code>
-     * @param pipeFrom {@link PipedExecBuilder.Script#setPipeFrom(String)}, may be <code>null</code>
-     * @param waitFor {@link PipedExecBuilder.Script#setWaitFor(String)}, may be <code>null</code>
-     */
-    private static void setExec(Object exec, String id, String command, String args, String pipeFrom,
-            String waitFor) {
-        setExec(exec, id, command, args, pipeFrom, waitFor, null);
-    }
     /**
      * Method filling all the attributes of the {@link PipedExecBuilder.Script} class.
      *
-     * @param exec the instance to fill, <b>must not</b> be <code>null</code>.
+     * @param builder the instance to add the new script into
      * @param id {@link PipedExecBuilder.Script#setID(String)}, may be <code>null</code>
-     * @param command {@link PipedExecBuilder.Script#setCommand(String)}, may be <code>null</code>
-     *        Note that the command must be supported by {@link SysUtilMock} class!
-     * @param args {@link PipedExecBuilder.Script#setArgs(String)}, may be <code>null</code>
+     * @param script the instance of {@link ExecScriptMock} to add
      * @param pipeFrom {@link PipedExecBuilder.Script#setPipeFrom(String)}, may be <code>null</code>
      * @param waitFor {@link PipedExecBuilder.Script#setWaitFor(String)}, may be <code>null</code>
-     * @param workingDir {@link PipedExecBuilder.Script#setWorkingDir(String)}, may be <code>null</code>
      */
-    private static void setExec(Object exec, String id, String command, String args,
-            String pipeFrom, String waitFor, String workingDir) {
+    private static void addScript(final PipedExecBuilder builder, final String id, final PipedScript script,
+            String pipeFrom, String waitFor) {
 
         if (id != null) {
-            ((PipedExecBuilder.Script) exec).setID(id);
-        }
-        if (command != null) {
-            /* Find the command among the public attributes of SysUtilMock class */
-            try {
-                Field f = SysUtilMock.class.getDeclaredField(command);
-                String[] c = (String[]) f.get(null);
-
-                /* add -V for verbose output in debug mode */
-                if (debugMode) {
-                    args = " -V " + (args != null ? args : "");
-                }
-                /* Update the command and the arguments */
-                command = c[0];
-                args = c[1] + "-P 'ID " + id + "' " + (args != null ? args : "");
-
-            } catch (NoSuchFieldException e) {
-                /* Command is not supported, fail the test */
-                fail(SysUtilMock.class.getName() + " does not suport command '" + command
-                        + "': " + e.getMessage());
-            } catch (Exception e) {
-                fail(e.getMessage());
-            }
-            /* Set the command */
-            ((PipedExecBuilder.Script) exec).setCommand(command);
-        }
-        if (args != null) {
-            ((PipedExecBuilder.Script) exec).setArgs(args);
-        }
-        if (workingDir != null) {
-            ((PipedExecBuilder.Script) exec).setWorkingDir(workingDir);
+            script.setID(id);
         }
         if (waitFor != null) {
-            ((PipedExecBuilder.Script) exec).setWaitFor(waitFor);
+            script.setWaitFor(waitFor);
         }
         if (pipeFrom != null) {
-            ((PipedExecBuilder.Script) exec).setPipeFrom(pipeFrom);
+            script.setPipeFrom(pipeFrom);
         }
 
-        // in debug mode, print more details
-        if (debugMode) {
-            System.out.println("Exec: " + ((PipedExecBuilder.Script) exec).getCommand() + " "
-                            + ((PipedExecBuilder.Script) exec).getArgs());
-        }
-    }
+//        // in debug mode, print more details
+//        if (debugMode) {
+//            System.out.println("Exec: " + exec);
+//        }
 
-    /**
-     * Method filling the "repipe" attributes of the {@link PipedExecBuilder.Script} class.
-     *
-     * @param exec the instance to fill, <b>must not</b> be <code>null</code>.
-     * @param ID {@link Script#setID(String)}, may be <code>null</code>
-     * @param repipe {@link Script#setRepipe(String)}, may be <code>null</code>
-     */
-    private static void repipe(Object exec, String ID, String repipe) {
-        if (ID != null) {
-            ((PipedExecBuilder.Script) exec).setID(ID);
-            ((PipedExecBuilder.Script) exec).setRepipe(repipe);
-        }
+        builder.add(script);
     }
     /**
-     * Method filling the "disable" attributes of the {@link PipedExecBuilder.Script} class.
+     * Method filling the "repipe" script for the given builder.
      *
-     * @param exec the instance to fill, <b>must not</b> be <code>null</code>.
-     * @param ID {@link Script#setID(String)}, may be <code>null</code>
+     * @param builder the instance to set the repipe request into
+     * @param ID {@link PipedScript#setID(String)}
+     * @param repipe new ID to pipe from
      */
-    private static void disable(Object exec, String ID) {
-        if (ID != null) {
-            ((PipedExecBuilder.Script) exec).setID(ID);
-            ((PipedExecBuilder.Script) exec).setDisable(true);
-        }
+    private static void setRepipe(final PipedExecBuilder builder, final String id, final String repipe) {
+        assertNotNull(builder);
+        assertNotNull(id);
+
+        final PipedExecBuilder.Repipe spec;
+
+        spec = builder.createRepipe();
+        spec.setID(id);
+        spec.setPipeFrom(repipe);
     }
-
     /**
-     * Method reading two files, comparing one against the another.
+     * Method filling the "disable" attributes of the {@link PipedScript} class.
      *
-     * @param  refrFile reference file.
-     * @param  testFile tested file.
-     * @throws IOException if files cannot be handled.
+     * @param builder the instance to add the new script into
+     * @param id {@link PipedScript#setID(String)}
      */
-    private static void assertFiles(File refrFile, File testFile)
-        throws IOException {
+    private static void setDisble(final PipedExecBuilder builder, final String id) {
+        assertNotNull(builder);
+        assertNotNull(id);
 
-        /* Both files must exist */
-        assertTrue("Reference file " + refrFile, refrFile.exists());
-        assertTrue("Tested file " + testFile, refrFile.exists());
-        /* Test streams */
-        assertStreams(new FileInputStream(refrFile), new FileInputStream(testFile));
-  }
+        final PipedExecBuilder.Disable spec;
 
-    /**
-     * Method reading two streams, comparing one against the another. As text files are expected
-     * under the streams, {@link BufferedReader} class is used to read from the streams and the
-     * lines are compared, actually.
-     *
-     * @param  refrStream reference stream.
-     * @param  testStream tested stream.
-     * @throws IOException if streams cannot be handled.
-     */
-    private static void assertStreams(InputStream refrStream, InputStream testStream)
-        throws IOException {
-
-        /* Create readers */
-        final BufferedReader refrReader = new BufferedReader(new InputStreamReader(refrStream));
-        final BufferedReader testReader = new BufferedReader(new InputStreamReader(testStream));
-        int numLinesRead  = 0;
-        /* Read and compare line by line */
-        while (true) {
-            String refrLine = refrReader.readLine();
-            String testLine = testReader.readLine();
-
-            /* Leave if one of them is Null */
-            if (refrLine == null && testLine == null) {
-                break;
-            }
-            /* Compare lines */
-            assertEquals("Line " + ++numLinesRead, refrLine, testLine);
-        }
-        /* Close them */
-        refrReader.close();
-        testReader.close();
-  }
-
-    /**
-     * Method comparing actual string with the required string represented as regular
-     * expression. It is almost equal to {@link #assertEquals(String, String, String)} with the
-     * difference that required string can be set as regular expression.
-     *
-     * @param message what is printed in case of failure
-     * @param expected the expected format of the message (as regular expression)
-     * @param actual actual message to check.
-     */
-    private static void assertRegex(String message, String expected, String actual)
-    {
-        if (Pattern.matches(expected, actual)) {
-            return;
-        }
-        /* Not passed - how to print expected/actual message? */
-        assertEquals(message, "regex[" + expected + "]", actual);
+        spec = builder.createDisable();
+        spec.setID(id);
     }
 
     /**
